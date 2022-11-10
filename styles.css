@@ -37,3 +37,14 @@ p {
 .btn--primary:active {
     background: #3b4db7;
 }
+.products--table {
+    margin-top: 20px;
+    border: none;
+    width: 1000px;
+    text-align: center;
+}
+.products--table > thead {
+    background-color: #db7e0a;
+    color: white !important;
+    font-weight: bold;
+}
