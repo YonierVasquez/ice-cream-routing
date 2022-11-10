@@ -16,6 +16,20 @@ body {
     font-weight: 700;
     margin-left: 28px;
 }
+.container {
+    background-color: #e7e7e7;
+    padding: 12px 52px 28px;
+    border-radius: 12px;
+}
 p {
     font-size: 1.2em;
+}
+.btn--primary {
+    background: #4c6aff;
+    border: 1px solid;
+    padding: 8px 20px;
+    color: white;
+    cursor: pointer;
+    font-size: 0.9em;
+    border-radius: 5px;
 }
