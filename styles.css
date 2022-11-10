@@ -1,0 +1,21 @@
+* {
+    font-family: Arial, Helvetica, sans-serif;
+    color: rgb(49, 49, 49);
+}
+body {
+    margin: 16px 40px;
+}
+.header--report {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.header--report > ul > a {
+    text-decoration: none;
+    color: blue;
+    font-weight: 700;
+    margin-left: 28px;
+}
+p {
+    font-size: 1.2em;
+}
