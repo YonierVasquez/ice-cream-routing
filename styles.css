@@ -9,6 +9,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    margin-bottom: 20px;
 }
 .header--report > ul > a {
     text-decoration: none;
@@ -32,4 +33,7 @@ p {
     cursor: pointer;
     font-size: 0.9em;
     border-radius: 5px;
+}
+.btn--primary:active {
+    background: #3b4db7;
 }
