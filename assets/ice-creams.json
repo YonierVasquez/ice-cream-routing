@@ -1,0 +1,62 @@
+[
+    {
+        "sabor": "Chocolate",
+        "precio": "3000",
+        "calorias": "80",
+        "paisOrigen": "Colombia"
+    },
+    {
+        "sabor": "Vainilla",
+        "precio": "4200",
+        "calorias": "56",
+        "paisOrigen": "México"
+    },
+    {
+        "sabor": "Mandarina",
+        "precio": "1800",
+        "calorias": "34",
+        "paisOrigen": "España"
+    },
+    {
+        "sabor": "Mayacuyá",
+        "precio": "3600",
+        "calorias": "58",
+        "paisOrigen": "México"
+    },
+    {
+        "sabor": "Sandía",
+        "precio": "4100",
+        "calorias": "32",
+        "paisOrigen": "Portugal"
+    },
+    {
+        "sabor": "Mora",
+        "precio": "2700",
+        "calorias": "47",
+        "paisOrigen": "Argentina"
+    },
+    {
+        "sabor": "Mango",
+        "precio": "3200",
+        "calorias": "58",
+        "paisOrigen": "Colombia"
+    },
+    {
+        "sabor": "Durazno",
+        "precio": "4200",
+        "calorias": "62",
+        "paisOrigen": "EE.UU"
+    },
+    {
+        "sabor": "Banano",
+        "precio": "3300",
+        "calorias": "70",
+        "paisOrigen": "Colombia"
+    },
+    {
+        "sabor": "Piña",
+        "precio": "5100",
+        "calorias": "36",
+        "paisOrigen": "Francia"
+    }
+]
