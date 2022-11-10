@@ -9,7 +9,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 .header--report > ul > a {
     text-decoration: none;
@@ -37,6 +37,10 @@ p {
 .btn--primary:active {
     background: #3b4db7;
 }
+.btn--primary > span {
+    color: white;
+    vertical-align: middle;
+}
 .products--table {
     margin-top: 20px;
     border: none;
@@ -44,7 +48,13 @@ p {
     text-align: center;
 }
 .products--table > thead {
-    background-color: #db7e0a;
+    background-color: #0adb71;
     color: white !important;
     font-weight: bold;
+}
+.products--table > thead > tr > td {
+    border-radius: 4px;
+}
+.products--table  tr {
+    height: 32px;
 }

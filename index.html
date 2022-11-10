@@ -8,9 +8,12 @@
     <title>Ice cream routing</title>
     <link rel="stylesheet" href="styles.css">
     <script type="module" src="main.js" defer></script>
+    <script src="assets/angular.min.js"></script>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
 </head>
 
-<body>
+<body ng-app="iceCreamReportApp" ng-controller="iceCreamReportController">
+
     <header class="header--report">
         <h1>🍨 Reporte de disponibilidad de helados</h1>
         <ul>
@@ -22,7 +25,10 @@
     <main>
         <div class="container">
             <p>En la siguiente tabla se muestran los helados disponibles hasta el momento</p>
-            <button class="btn--primary">Actulizar tabla</button>
+            <button class="btn--primary" ng-click="updateTable()">
+                <span class="material-symbols-outlined">autorenew</span>
+                Actulizar tabla
+            </button>
 
             <table class="products--table">
                 <thead>
@@ -34,16 +40,17 @@
                     </tr>
                 </thead>
                 <tbody>
-                    <tr>
-                        <td>Sabor</td>
-                        <td>Precio</td>
-                        <td>Calorias</td>
-                        <td>Pais origen</td>
+                    <tr ng-repeat="iceCream in iceCreamsList">
+                        <td>{{ iceCream.sabor }}</td>
+                        <td>${{ iceCream.precio }}</td>
+                        <td>{{ iceCream.calorias }}</td>
+                        <td>{{ iceCream.paisOrigen }}</td>
                     </tr>
                 </tbody>
             </table>
         </div>
     </main>
+
 </body>
 
 </html>
