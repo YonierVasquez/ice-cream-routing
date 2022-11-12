@@ -6,6 +6,12 @@ import { IceCreamService } from "../../services/ice-cream.service.js";
 
     angular.module("home", [])
 
+        .config(function ($locationProvider) {
+            $locationProvider.html5Mode(true);
+        })
+
+        .value('$routerRootComponent', 'app')
+
         .controller("homeController", function ($scope) {
             $scope.iceCreamsList = iceCreamService.getIceCreams()
             $scope.updateTable = function () {
@@ -14,7 +20,7 @@ import { IceCreamService } from "../../services/ice-cream.service.js";
         })
 
         .component("homeComponent", {
-            templateUrl: 'components/home/home.view.html'
+            templateUrl: 'components/home/home.view.html',
         })
 
 })(window.angular);
