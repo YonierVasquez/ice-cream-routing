@@ -6,9 +6,9 @@
             $locationProvider.html5Mode(true);
         })
 
-        .value('$routerRootComponent', 'app')
+        .value('$routerRootComponent', 'appComponent')
 
-        .component('app', {
+        .component('appComponent', {
             template: '<ng-outlet></ng-outlet>',
             $routeConfig: [
                 { path: '/', name: 'Home', component: 'homeComponent', useAsDefault: true },
