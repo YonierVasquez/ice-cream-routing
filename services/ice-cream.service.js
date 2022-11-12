@@ -1,12 +1,19 @@
 import iceCreamList from '../data/ice-creams.json' assert {type: 'json'};
 
-export class IceCreamService {
+(function (angular) {
 
-    /**
-     * Retornar lista de helados en orden aleatorio
-     * @returns
-     */
-    getIceCreams() {
-        return iceCreamList.sort(() => Math.random() - 0.5);
-    }
-}
+    angular.module("iceCreamService", [])
+
+        /**
+         * Retorna una lista de helados en orden aleatorio
+         */
+        .factory("iceCreamService", function () {
+            return {
+                getIceCreams: function () {
+                    return iceCreamList.sort(() => Math.random() - 0.5);
+                }
+            }
+        })
+
+
+})(window.angular);

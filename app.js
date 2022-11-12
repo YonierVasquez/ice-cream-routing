@@ -11,8 +11,9 @@
         .component('app', {
             template: '<ng-outlet></ng-outlet>',
             $routeConfig: [
-              { path: '/', name: 'Home', component: 'homeComponent', useAsDefault: true },
-              { path: '/about-app', name: 'AboutApp', component: 'aboutOpiComponent' }
+                { path: '/', name: 'Home', component: 'homeComponent', useAsDefault: true },
+                { path: '/about-app', name: 'AboutApp', component: 'aboutAppComponent' },
+                { path: '/about-opi', name: 'AboutOpi', component: 'aboutOpiComponent' }
             ]
         });
 
