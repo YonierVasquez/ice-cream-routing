@@ -1,1266 +1,3089 @@
-/**
- * @license AngularJS v1.8.2
- * (c) 2010-2020 Google LLC. http://angularjs.org
- * License: MIT
+(function(){
+///<reference path="../typings/angularjs/angular.d.ts"/>
+/*
+ * decorates $compileProvider so that we have access to routing metadata
  */
-(function(window, angular) {'use strict';
-
-/* global shallowCopy: true */
-
-/**
- * Creates a shallow copy of an object, an array or a primitive.
- *
- * Assumes that there are no proto properties for objects.
- */
-function shallowCopy(src, dst) {
-  if (isArray(src)) {
-    dst = dst || [];
-
-    for (var i = 0, ii = src.length; i < ii; i++) {
-      dst[i] = src[i];
-    }
-  } else if (isObject(src)) {
-    dst = dst || {};
-
-    for (var key in src) {
-      if (!(key.charAt(0) === '$' && key.charAt(1) === '$')) {
-        dst[key] = src[key];
-      }
-    }
-  }
-
-  return dst || src;
+function compilerProviderDecorator($compileProvider, $$directiveIntrospectorProvider) {
+    var directive = $compileProvider.directive;
+    $compileProvider.directive = function (name, factory) {
+        $$directiveIntrospectorProvider.register(name, factory);
+        return directive.apply(this, arguments);
+    };
 }
-
-/* global routeToRegExp: true */
-
-/**
- * @param {string} path - The path to parse. (It is assumed to have query and hash stripped off.)
- * @param {Object} opts - Options.
- * @return {Object} - An object containing an array of path parameter names (`keys`) and a regular
- *     expression (`regexp`) that can be used to identify a matching URL and extract the path
- *     parameter values.
- *
- * @description
- * Parses the given path, extracting path parameter names and a regular expression to match URLs.
- *
- * Originally inspired by `pathRexp` in `visionmedia/express/lib/utils.js`.
+/*
+ * private service that holds route mappings for each controller
  */
-function routeToRegExp(path, opts) {
-  var keys = [];
-
-  var pattern = path
-    .replace(/([().])/g, '\\$1')
-    .replace(/(\/)?:(\w+)(\*\?|[?*])?/g, function(_, slash, key, option) {
-      var optional = option === '?' || option === '*?';
-      var star = option === '*' || option === '*?';
-      keys.push({name: key, optional: optional});
-      slash = slash || '';
-      return (
-        (optional ? '(?:' + slash : slash + '(?:') +
-        (star ? '(.+?)' : '([^/]+)') +
-        (optional ? '?)?' : ')')
-      );
-    })
-    .replace(/([/$*])/g, '\\$1');
-
-  if (opts.ignoreTrailingSlashes) {
-    pattern = pattern.replace(/\/+$/, '') + '/*';
-  }
-
-  return {
-    keys: keys,
-    regexp: new RegExp(
-      '^' + pattern + '(?:[?#]|$)',
-      opts.caseInsensitiveMatch ? 'i' : ''
-    )
-  };
-}
-
-/* global routeToRegExp: false */
-/* global shallowCopy: false */
-
-// `isArray` and `isObject` are necessary for `shallowCopy()` (included via `src/shallowCopy.js`).
-// They are initialized inside the `$RouteProvider`, to ensure `window.angular` is available.
-var isArray;
-var isObject;
-var isDefined;
-var noop;
-
-/**
- * @ngdoc module
- * @name ngRoute
- * @description
- *
- * The `ngRoute` module provides routing and deeplinking services and directives for AngularJS apps.
- *
- * ## Example
- * See {@link ngRoute.$route#examples $route} for an example of configuring and using `ngRoute`.
- *
- */
-/* global -ngRouteModule */
-var ngRouteModule = angular.
-  module('ngRoute', []).
-  info({ angularVersion: '1.8.2' }).
-  provider('$route', $RouteProvider).
-  // Ensure `$route` will be instantiated in time to capture the initial `$locationChangeSuccess`
-  // event (unless explicitly disabled). This is necessary in case `ngView` is included in an
-  // asynchronously loaded template.
-  run(instantiateRoute);
-var $routeMinErr = angular.$$minErr('ngRoute');
-var isEagerInstantiationEnabled;
-
-
-/**
- * @ngdoc provider
- * @name $routeProvider
- * @this
- *
- * @description
- *
- * Used for configuring routes.
- *
- * ## Example
- * See {@link ngRoute.$route#examples $route} for an example of configuring and using `ngRoute`.
- *
- * ## Dependencies
- * Requires the {@link ngRoute `ngRoute`} module to be installed.
- */
-function $RouteProvider() {
-  isArray = angular.isArray;
-  isObject = angular.isObject;
-  isDefined = angular.isDefined;
-  noop = angular.noop;
-
-  function inherit(parent, extra) {
-    return angular.extend(Object.create(parent), extra);
-  }
-
-  var routes = {};
-
-  /**
-   * @ngdoc method
-   * @name $routeProvider#when
-   *
-   * @param {string} path Route path (matched against `$location.path`). If `$location.path`
-   *    contains redundant trailing slash or is missing one, the route will still match and the
-   *    `$location.path` will be updated to add or drop the trailing slash to exactly match the
-   *    route definition.
-   *
-   *    * `path` can contain named groups starting with a colon: e.g. `:name`. All characters up
-   *        to the next slash are matched and stored in `$routeParams` under the given `name`
-   *        when the route matches.
-   *    * `path` can contain named groups starting with a colon and ending with a star:
-   *        e.g.`:name*`. All characters are eagerly stored in `$routeParams` under the given `name`
-   *        when the route matches.
-   *    * `path` can contain optional named groups with a question mark: e.g.`:name?`.
-   *
-   *    For example, routes like `/color/:color/largecode/:largecode*\/edit` will match
-   *    `/color/brown/largecode/code/with/slashes/edit` and extract:
-   *
-   *    * `color: brown`
-   *    * `largecode: code/with/slashes`.
-   *
-   *
-   * @param {Object} route Mapping information to be assigned to `$route.current` on route
-   *    match.
-   *
-   *    Object properties:
-   *
-   *    - `controller` – `{(string|Function)=}` – Controller fn that should be associated with
-   *      newly created scope or the name of a {@link angular.Module#controller registered
-   *      controller} if passed as a string.
-   *    - `controllerAs` – `{string=}` – An identifier name for a reference to the controller.
-   *      If present, the controller will be published to scope under the `controllerAs` name.
-   *    - `template` – `{(string|Function)=}` – html template as a string or a function that
-   *      returns an html template as a string which should be used by {@link
-   *      ngRoute.directive:ngView ngView} or {@link ng.directive:ngInclude ngInclude} directives.
-   *      This property takes precedence over `templateUrl`.
-   *
-   *      If `template` is a function, it will be called with the following parameters:
-   *
-   *      - `{Array.<Object>}` - route parameters extracted from the current
-   *        `$location.path()` by applying the current route
-   *
-   *      One of `template` or `templateUrl` is required.
-   *
-   *    - `templateUrl` – `{(string|Function)=}` – path or function that returns a path to an html
-   *      template that should be used by {@link ngRoute.directive:ngView ngView}.
-   *
-   *      If `templateUrl` is a function, it will be called with the following parameters:
-   *
-   *      - `{Array.<Object>}` - route parameters extracted from the current
-   *        `$location.path()` by applying the current route
-   *
-   *      One of `templateUrl` or `template` is required.
-   *
-   *    - `resolve` - `{Object.<string, Function>=}` - An optional map of dependencies which should
-   *      be injected into the controller. If any of these dependencies are promises, the router
-   *      will wait for them all to be resolved or one to be rejected before the controller is
-   *      instantiated.
-   *      If all the promises are resolved successfully, the values of the resolved promises are
-   *      injected and {@link ngRoute.$route#$routeChangeSuccess $routeChangeSuccess} event is
-   *      fired. If any of the promises are rejected the
-   *      {@link ngRoute.$route#$routeChangeError $routeChangeError} event is fired.
-   *      For easier access to the resolved dependencies from the template, the `resolve` map will
-   *      be available on the scope of the route, under `$resolve` (by default) or a custom name
-   *      specified by the `resolveAs` property (see below). This can be particularly useful, when
-   *      working with {@link angular.Module#component components} as route templates.<br />
-   *      <div class="alert alert-warning">
-   *        **Note:** If your scope already contains a property with this name, it will be hidden
-   *        or overwritten. Make sure, you specify an appropriate name for this property, that
-   *        does not collide with other properties on the scope.
-   *      </div>
-   *      The map object is:
-   *
-   *      - `key` – `{string}`: a name of a dependency to be injected into the controller.
-   *      - `factory` - `{string|Function}`: If `string` then it is an alias for a service.
-   *        Otherwise if function, then it is {@link auto.$injector#invoke injected}
-   *        and the return value is treated as the dependency. If the result is a promise, it is
-   *        resolved before its value is injected into the controller. Be aware that
-   *        `ngRoute.$routeParams` will still refer to the previous route within these resolve
-   *        functions.  Use `$route.current.params` to access the new route parameters, instead.
-   *
-   *    - `resolveAs` - `{string=}` - The name under which the `resolve` map will be available on
-   *      the scope of the route. If omitted, defaults to `$resolve`.
-   *
-   *    - `redirectTo` – `{(string|Function)=}` – value to update
-   *      {@link ng.$location $location} path with and trigger route redirection.
-   *
-   *      If `redirectTo` is a function, it will be called with the following parameters:
-   *
-   *      - `{Object.<string>}` - route parameters extracted from the current
-   *        `$location.path()` by applying the current route templateUrl.
-   *      - `{string}` - current `$location.path()`
-   *      - `{Object}` - current `$location.search()`
-   *
-   *      The custom `redirectTo` function is expected to return a string which will be used
-   *      to update `$location.url()`. If the function throws an error, no further processing will
-   *      take place and the {@link ngRoute.$route#$routeChangeError $routeChangeError} event will
-   *      be fired.
-   *
-   *      Routes that specify `redirectTo` will not have their controllers, template functions
-   *      or resolves called, the `$location` will be changed to the redirect url and route
-   *      processing will stop. The exception to this is if the `redirectTo` is a function that
-   *      returns `undefined`. In this case the route transition occurs as though there was no
-   *      redirection.
-   *
-   *    - `resolveRedirectTo` – `{Function=}` – a function that will (eventually) return the value
-   *      to update {@link ng.$location $location} URL with and trigger route redirection. In
-   *      contrast to `redirectTo`, dependencies can be injected into `resolveRedirectTo` and the
-   *      return value can be either a string or a promise that will be resolved to a string.
-   *
-   *      Similar to `redirectTo`, if the return value is `undefined` (or a promise that gets
-   *      resolved to `undefined`), no redirection takes place and the route transition occurs as
-   *      though there was no redirection.
-   *
-   *      If the function throws an error or the returned promise gets rejected, no further
-   *      processing will take place and the
-   *      {@link ngRoute.$route#$routeChangeError $routeChangeError} event will be fired.
-   *
-   *      `redirectTo` takes precedence over `resolveRedirectTo`, so specifying both on the same
-   *      route definition, will cause the latter to be ignored.
-   *
-   *    - `[reloadOnUrl=true]` - `{boolean=}` - reload route when any part of the URL changes
-   *      (including the path) even if the new URL maps to the same route.
-   *
-   *      If the option is set to `false` and the URL in the browser changes, but the new URL maps
-   *      to the same route, then a `$routeUpdate` event is broadcasted on the root scope (without
-   *      reloading the route).
-   *
-   *    - `[reloadOnSearch=true]` - `{boolean=}` - reload route when only `$location.search()`
-   *      or `$location.hash()` changes.
-   *
-   *      If the option is set to `false` and the URL in the browser changes, then a `$routeUpdate`
-   *      event is broadcasted on the root scope (without reloading the route).
-   *
-   *      <div class="alert alert-warning">
-   *        **Note:** This option has no effect if `reloadOnUrl` is set to `false`.
-   *      </div>
-   *
-   *    - `[caseInsensitiveMatch=false]` - `{boolean=}` - match routes without being case sensitive
-   *
-   *      If the option is set to `true`, then the particular route can be matched without being
-   *      case sensitive
-   *
-   * @returns {Object} self
-   *
-   * @description
-   * Adds a new route definition to the `$route` service.
-   */
-  this.when = function(path, route) {
-    //copy original route object to preserve params inherited from proto chain
-    var routeCopy = shallowCopy(route);
-    if (angular.isUndefined(routeCopy.reloadOnUrl)) {
-      routeCopy.reloadOnUrl = true;
+var DirectiveIntrospectorProvider = (function () {
+    function DirectiveIntrospectorProvider() {
+        this.directiveBuffer = [];
+        this.directiveFactoriesByName = {};
+        this.onDirectiveRegistered = null;
     }
-    if (angular.isUndefined(routeCopy.reloadOnSearch)) {
-      routeCopy.reloadOnSearch = true;
-    }
-    if (angular.isUndefined(routeCopy.caseInsensitiveMatch)) {
-      routeCopy.caseInsensitiveMatch = this.caseInsensitiveMatch;
-    }
-    routes[path] = angular.extend(
-      routeCopy,
-      {originalPath: path},
-      path && routeToRegExp(path, routeCopy)
-    );
-
-    // create redirection for trailing slashes
-    if (path) {
-      var redirectPath = (path[path.length - 1] === '/')
-            ? path.substr(0, path.length - 1)
-            : path + '/';
-
-      routes[redirectPath] = angular.extend(
-        {originalPath: path, redirectTo: path},
-        routeToRegExp(redirectPath, routeCopy)
-      );
-    }
-
-    return this;
-  };
-
-  /**
-   * @ngdoc property
-   * @name $routeProvider#caseInsensitiveMatch
-   * @description
-   *
-   * A boolean property indicating if routes defined
-   * using this provider should be matched using a case insensitive
-   * algorithm. Defaults to `false`.
-   */
-  this.caseInsensitiveMatch = false;
-
-  /**
-   * @ngdoc method
-   * @name $routeProvider#otherwise
-   *
-   * @description
-   * Sets route definition that will be used on route change when no other route definition
-   * is matched.
-   *
-   * @param {Object|string} params Mapping information to be assigned to `$route.current`.
-   * If called with a string, the value maps to `redirectTo`.
-   * @returns {Object} self
-   */
-  this.otherwise = function(params) {
-    if (typeof params === 'string') {
-      params = {redirectTo: params};
-    }
-    this.when(null, params);
-    return this;
-  };
-
-  /**
-   * @ngdoc method
-   * @name $routeProvider#eagerInstantiationEnabled
-   * @kind function
-   *
-   * @description
-   * Call this method as a setter to enable/disable eager instantiation of the
-   * {@link ngRoute.$route $route} service upon application bootstrap. You can also call it as a
-   * getter (i.e. without any arguments) to get the current value of the
-   * `eagerInstantiationEnabled` flag.
-   *
-   * Instantiating `$route` early is necessary for capturing the initial
-   * {@link ng.$location#$locationChangeStart $locationChangeStart} event and navigating to the
-   * appropriate route. Usually, `$route` is instantiated in time by the
-   * {@link ngRoute.ngView ngView} directive. Yet, in cases where `ngView` is included in an
-   * asynchronously loaded template (e.g. in another directive's template), the directive factory
-   * might not be called soon enough for `$route` to be instantiated _before_ the initial
-   * `$locationChangeSuccess` event is fired. Eager instantiation ensures that `$route` is always
-   * instantiated in time, regardless of when `ngView` will be loaded.
-   *
-   * The default value is true.
-   *
-   * **Note**:<br />
-   * You may want to disable the default behavior when unit-testing modules that depend on
-   * `ngRoute`, in order to avoid an unexpected request for the default route's template.
-   *
-   * @param {boolean=} enabled - If provided, update the internal `eagerInstantiationEnabled` flag.
-   *
-   * @returns {*} The current value of the `eagerInstantiationEnabled` flag if used as a getter or
-   *     itself (for chaining) if used as a setter.
-   */
-  isEagerInstantiationEnabled = true;
-  this.eagerInstantiationEnabled = function eagerInstantiationEnabled(enabled) {
-    if (isDefined(enabled)) {
-      isEagerInstantiationEnabled = enabled;
-      return this;
-    }
-
-    return isEagerInstantiationEnabled;
-  };
-
-
-  this.$get = ['$rootScope',
-               '$location',
-               '$routeParams',
-               '$q',
-               '$injector',
-               '$templateRequest',
-               '$sce',
-               '$browser',
-      function($rootScope, $location, $routeParams, $q, $injector, $templateRequest, $sce, $browser) {
-
-    /**
-     * @ngdoc service
-     * @name $route
-     * @requires $location
-     * @requires $routeParams
-     *
-     * @property {Object} current Reference to the current route definition.
-     * The route definition contains:
-     *
-     *   - `controller`: The controller constructor as defined in the route definition.
-     *   - `locals`: A map of locals which is used by {@link ng.$controller $controller} service for
-     *     controller instantiation. The `locals` contain
-     *     the resolved values of the `resolve` map. Additionally the `locals` also contain:
-     *
-     *     - `$scope` - The current route scope.
-     *     - `$template` - The current route template HTML.
-     *
-     *     The `locals` will be assigned to the route scope's `$resolve` property. You can override
-     *     the property name, using `resolveAs` in the route definition. See
-     *     {@link ngRoute.$routeProvider $routeProvider} for more info.
-     *
-     * @property {Object} routes Object with all route configuration Objects as its properties.
-     *
-     * @description
-     * `$route` is used for deep-linking URLs to controllers and views (HTML partials).
-     * It watches `$location.url()` and tries to map the path to an existing route definition.
-     *
-     * Requires the {@link ngRoute `ngRoute`} module to be installed.
-     *
-     * You can define routes through {@link ngRoute.$routeProvider $routeProvider}'s API.
-     *
-     * The `$route` service is typically used in conjunction with the
-     * {@link ngRoute.directive:ngView `ngView`} directive and the
-     * {@link ngRoute.$routeParams `$routeParams`} service.
-     *
-     * @example
-     * This example shows how changing the URL hash causes the `$route` to match a route against the
-     * URL, and the `ngView` pulls in the partial.
-     *
-     * <example name="$route-service" module="ngRouteExample"
-     *          deps="angular-route.js" fixBase="true">
-     *   <file name="index.html">
-     *     <div ng-controller="MainController">
-     *       Choose:
-     *       <a href="Book/Moby">Moby</a> |
-     *       <a href="Book/Moby/ch/1">Moby: Ch1</a> |
-     *       <a href="Book/Gatsby">Gatsby</a> |
-     *       <a href="Book/Gatsby/ch/4?key=value">Gatsby: Ch4</a> |
-     *       <a href="Book/Scarlet">Scarlet Letter</a><br/>
-     *
-     *       <div ng-view></div>
-     *
-     *       <hr />
-     *
-     *       <pre>$location.path() = {{$location.path()}}</pre>
-     *       <pre>$route.current.templateUrl = {{$route.current.templateUrl}}</pre>
-     *       <pre>$route.current.params = {{$route.current.params}}</pre>
-     *       <pre>$route.current.scope.name = {{$route.current.scope.name}}</pre>
-     *       <pre>$routeParams = {{$routeParams}}</pre>
-     *     </div>
-     *   </file>
-     *
-     *   <file name="book.html">
-     *     controller: {{name}}<br />
-     *     Book Id: {{params.bookId}}<br />
-     *   </file>
-     *
-     *   <file name="chapter.html">
-     *     controller: {{name}}<br />
-     *     Book Id: {{params.bookId}}<br />
-     *     Chapter Id: {{params.chapterId}}
-     *   </file>
-     *
-     *   <file name="script.js">
-     *     angular.module('ngRouteExample', ['ngRoute'])
-     *
-     *      .controller('MainController', function($scope, $route, $routeParams, $location) {
-     *          $scope.$route = $route;
-     *          $scope.$location = $location;
-     *          $scope.$routeParams = $routeParams;
-     *      })
-     *
-     *      .controller('BookController', function($scope, $routeParams) {
-     *          $scope.name = 'BookController';
-     *          $scope.params = $routeParams;
-     *      })
-     *
-     *      .controller('ChapterController', function($scope, $routeParams) {
-     *          $scope.name = 'ChapterController';
-     *          $scope.params = $routeParams;
-     *      })
-     *
-     *     .config(function($routeProvider, $locationProvider) {
-     *       $routeProvider
-     *        .when('/Book/:bookId', {
-     *         templateUrl: 'book.html',
-     *         controller: 'BookController',
-     *         resolve: {
-     *           // I will cause a 1 second delay
-     *           delay: function($q, $timeout) {
-     *             var delay = $q.defer();
-     *             $timeout(delay.resolve, 1000);
-     *             return delay.promise;
-     *           }
-     *         }
-     *       })
-     *       .when('/Book/:bookId/ch/:chapterId', {
-     *         templateUrl: 'chapter.html',
-     *         controller: 'ChapterController'
-     *       });
-     *
-     *       // configure html5 to get links working on jsfiddle
-     *       $locationProvider.html5Mode(true);
-     *     });
-     *
-     *   </file>
-     *
-     *   <file name="protractor.js" type="protractor">
-     *     it('should load and compile correct template', function() {
-     *       element(by.linkText('Moby: Ch1')).click();
-     *       var content = element(by.css('[ng-view]')).getText();
-     *       expect(content).toMatch(/controller: ChapterController/);
-     *       expect(content).toMatch(/Book Id: Moby/);
-     *       expect(content).toMatch(/Chapter Id: 1/);
-     *
-     *       element(by.partialLinkText('Scarlet')).click();
-     *
-     *       content = element(by.css('[ng-view]')).getText();
-     *       expect(content).toMatch(/controller: BookController/);
-     *       expect(content).toMatch(/Book Id: Scarlet/);
-     *     });
-     *   </file>
-     * </example>
-     */
-
-    /**
-     * @ngdoc event
-     * @name $route#$routeChangeStart
-     * @eventType broadcast on root scope
-     * @description
-     * Broadcasted before a route change. At this  point the route services starts
-     * resolving all of the dependencies needed for the route change to occur.
-     * Typically this involves fetching the view template as well as any dependencies
-     * defined in `resolve` route property. Once  all of the dependencies are resolved
-     * `$routeChangeSuccess` is fired.
-     *
-     * The route change (and the `$location` change that triggered it) can be prevented
-     * by calling `preventDefault` method of the event. See {@link ng.$rootScope.Scope#$on}
-     * for more details about event object.
-     *
-     * @param {Object} angularEvent Synthetic event object.
-     * @param {Route} next Future route information.
-     * @param {Route} current Current route information.
-     */
-
-    /**
-     * @ngdoc event
-     * @name $route#$routeChangeSuccess
-     * @eventType broadcast on root scope
-     * @description
-     * Broadcasted after a route change has happened successfully.
-     * The `resolve` dependencies are now available in the `current.locals` property.
-     *
-     * {@link ngRoute.directive:ngView ngView} listens for the directive
-     * to instantiate the controller and render the view.
-     *
-     * @param {Object} angularEvent Synthetic event object.
-     * @param {Route} current Current route information.
-     * @param {Route|Undefined} previous Previous route information, or undefined if current is
-     * first route entered.
-     */
-
-    /**
-     * @ngdoc event
-     * @name $route#$routeChangeError
-     * @eventType broadcast on root scope
-     * @description
-     * Broadcasted if a redirection function fails or any redirection or resolve promises are
-     * rejected.
-     *
-     * @param {Object} angularEvent Synthetic event object
-     * @param {Route} current Current route information.
-     * @param {Route} previous Previous route information.
-     * @param {Route} rejection The thrown error or the rejection reason of the promise. Usually
-     * the rejection reason is the error that caused the promise to get rejected.
-     */
-
-    /**
-     * @ngdoc event
-     * @name $route#$routeUpdate
-     * @eventType broadcast on root scope
-     * @description
-     * Broadcasted if the same instance of a route (including template, controller instance,
-     * resolved dependencies, etc.) is being reused. This can happen if either `reloadOnSearch` or
-     * `reloadOnUrl` has been set to `false`.
-     *
-     * @param {Object} angularEvent Synthetic event object
-     * @param {Route} current Current/previous route information.
-     */
-
-    var forceReload = false,
-        preparedRoute,
-        preparedRouteIsUpdateOnly,
-        $route = {
-          routes: routes,
-
-          /**
-           * @ngdoc method
-           * @name $route#reload
-           *
-           * @description
-           * Causes `$route` service to reload the current route even if
-           * {@link ng.$location $location} hasn't changed.
-           *
-           * As a result of that, {@link ngRoute.directive:ngView ngView}
-           * creates new scope and reinstantiates the controller.
-           */
-          reload: function() {
-            forceReload = true;
-
-            var fakeLocationEvent = {
-              defaultPrevented: false,
-              preventDefault: function fakePreventDefault() {
-                this.defaultPrevented = true;
-                forceReload = false;
-              }
-            };
-
-            $rootScope.$evalAsync(function() {
-              prepareRoute(fakeLocationEvent);
-              if (!fakeLocationEvent.defaultPrevented) commitRoute();
-            });
-          },
-
-          /**
-           * @ngdoc method
-           * @name $route#updateParams
-           *
-           * @description
-           * Causes `$route` service to update the current URL, replacing
-           * current route parameters with those specified in `newParams`.
-           * Provided property names that match the route's path segment
-           * definitions will be interpolated into the location's path, while
-           * remaining properties will be treated as query params.
-           *
-           * @param {!Object<string, string>} newParams mapping of URL parameter names to values
-           */
-          updateParams: function(newParams) {
-            if (this.current && this.current.$$route) {
-              newParams = angular.extend({}, this.current.params, newParams);
-              $location.path(interpolate(this.current.$$route.originalPath, newParams));
-              // interpolate modifies newParams, only query params are left
-              $location.search(newParams);
-            } else {
-              throw $routeMinErr('norout', 'Tried updating route with no current route');
+    DirectiveIntrospectorProvider.prototype.register = function (name, factory) {
+        if (angular.isArray(factory)) {
+            factory = factory[factory.length - 1];
+        }
+        this.directiveFactoriesByName[name] = factory;
+        if (this.onDirectiveRegistered) {
+            this.onDirectiveRegistered(name, factory);
+        }
+        else {
+            this.directiveBuffer.push({ name: name, factory: factory });
+        }
+    };
+    DirectiveIntrospectorProvider.prototype.$get = function () {
+        var _this = this;
+        var fn = function (newOnControllerRegistered) {
+            _this.onDirectiveRegistered = newOnControllerRegistered;
+            while (_this.directiveBuffer.length > 0) {
+                var directive = _this.directiveBuffer.pop();
+                _this.onDirectiveRegistered(directive.name, directive.factory);
             }
-          }
         };
-
-    $rootScope.$on('$locationChangeStart', prepareRoute);
-    $rootScope.$on('$locationChangeSuccess', commitRoute);
-
-    return $route;
-
-    /////////////////////////////////////////////////////
-
-    /**
-     * @param on {string} current url
-     * @param route {Object} route regexp to match the url against
-     * @return {?Object}
-     *
-     * @description
-     * Check if the route matches the current url.
-     *
-     * Inspired by match in
-     * visionmedia/express/lib/router/router.js.
-     */
-    function switchRouteMatcher(on, route) {
-      var keys = route.keys,
-          params = {};
-
-      if (!route.regexp) return null;
-
-      var m = route.regexp.exec(on);
-      if (!m) return null;
-
-      for (var i = 1, len = m.length; i < len; ++i) {
-        var key = keys[i - 1];
-
-        var val = m[i];
-
-        if (key && val) {
-          params[key.name] = val;
-        }
-      }
-      return params;
-    }
-
-    function prepareRoute($locationEvent) {
-      var lastRoute = $route.current;
-
-      preparedRoute = parseRoute();
-      preparedRouteIsUpdateOnly = isNavigationUpdateOnly(preparedRoute, lastRoute);
-
-      if (!preparedRouteIsUpdateOnly && (lastRoute || preparedRoute)) {
-        if ($rootScope.$broadcast('$routeChangeStart', preparedRoute, lastRoute).defaultPrevented) {
-          if ($locationEvent) {
-            $locationEvent.preventDefault();
-          }
-        }
-      }
-    }
-
-    function commitRoute() {
-      var lastRoute = $route.current;
-      var nextRoute = preparedRoute;
-
-      if (preparedRouteIsUpdateOnly) {
-        lastRoute.params = nextRoute.params;
-        angular.copy(lastRoute.params, $routeParams);
-        $rootScope.$broadcast('$routeUpdate', lastRoute);
-      } else if (nextRoute || lastRoute) {
-        forceReload = false;
-        $route.current = nextRoute;
-
-        var nextRoutePromise = $q.resolve(nextRoute);
-
-        $browser.$$incOutstandingRequestCount('$route');
-
-        nextRoutePromise.
-          then(getRedirectionData).
-          then(handlePossibleRedirection).
-          then(function(keepProcessingRoute) {
-            return keepProcessingRoute && nextRoutePromise.
-              then(resolveLocals).
-              then(function(locals) {
-                // after route change
-                if (nextRoute === $route.current) {
-                  if (nextRoute) {
-                    nextRoute.locals = locals;
-                    angular.copy(nextRoute.params, $routeParams);
-                  }
-                  $rootScope.$broadcast('$routeChangeSuccess', nextRoute, lastRoute);
-                }
-              });
-          }).catch(function(error) {
-            if (nextRoute === $route.current) {
-              $rootScope.$broadcast('$routeChangeError', nextRoute, lastRoute, error);
-            }
-          }).finally(function() {
-            // Because `commitRoute()` is called from a `$rootScope.$evalAsync` block (see
-            // `$locationWatch`), this `$$completeOutstandingRequest()` call will not cause
-            // `outstandingRequestCount` to hit zero.  This is important in case we are redirecting
-            // to a new route which also requires some asynchronous work.
-
-            $browser.$$completeOutstandingRequest(noop, '$route');
-          });
-      }
-    }
-
-    function getRedirectionData(route) {
-      var data = {
-        route: route,
-        hasRedirection: false
-      };
-
-      if (route) {
-        if (route.redirectTo) {
-          if (angular.isString(route.redirectTo)) {
-            data.path = interpolate(route.redirectTo, route.params);
-            data.search = route.params;
-            data.hasRedirection = true;
-          } else {
-            var oldPath = $location.path();
-            var oldSearch = $location.search();
-            var newUrl = route.redirectTo(route.pathParams, oldPath, oldSearch);
-
-            if (angular.isDefined(newUrl)) {
-              data.url = newUrl;
-              data.hasRedirection = true;
-            }
-          }
-        } else if (route.resolveRedirectTo) {
-          return $q.
-            resolve($injector.invoke(route.resolveRedirectTo)).
-            then(function(newUrl) {
-              if (angular.isDefined(newUrl)) {
-                data.url = newUrl;
-                data.hasRedirection = true;
-              }
-
-              return data;
-            });
-        }
-      }
-
-      return data;
-    }
-
-    function handlePossibleRedirection(data) {
-      var keepProcessingRoute = true;
-
-      if (data.route !== $route.current) {
-        keepProcessingRoute = false;
-      } else if (data.hasRedirection) {
-        var oldUrl = $location.url();
-        var newUrl = data.url;
-
-        if (newUrl) {
-          $location.
-            url(newUrl).
-            replace();
-        } else {
-          newUrl = $location.
-            path(data.path).
-            search(data.search).
-            replace().
-            url();
-        }
-
-        if (newUrl !== oldUrl) {
-          // Exit out and don't process current next value,
-          // wait for next location change from redirect
-          keepProcessingRoute = false;
-        }
-      }
-
-      return keepProcessingRoute;
-    }
-
-    function resolveLocals(route) {
-      if (route) {
-        var locals = angular.extend({}, route.resolve);
-        angular.forEach(locals, function(value, key) {
-          locals[key] = angular.isString(value) ?
-              $injector.get(value) :
-              $injector.invoke(value, null, null, key);
-        });
-        var template = getTemplateFor(route);
-        if (angular.isDefined(template)) {
-          locals['$template'] = template;
-        }
-        return $q.all(locals);
-      }
-    }
-
-    function getTemplateFor(route) {
-      var template, templateUrl;
-      if (angular.isDefined(template = route.template)) {
-        if (angular.isFunction(template)) {
-          template = template(route.params);
-        }
-      } else if (angular.isDefined(templateUrl = route.templateUrl)) {
-        if (angular.isFunction(templateUrl)) {
-          templateUrl = templateUrl(route.params);
-        }
-        if (angular.isDefined(templateUrl)) {
-          route.loadedTemplateUrl = $sce.valueOf(templateUrl);
-          template = $templateRequest(templateUrl);
-        }
-      }
-      return template;
-    }
-
-    /**
-     * @returns {Object} the current active route, by matching it against the URL
-     */
-    function parseRoute() {
-      // Match a route
-      var params, match;
-      angular.forEach(routes, function(route, path) {
-        if (!match && (params = switchRouteMatcher($location.path(), route))) {
-          match = inherit(route, {
-            params: angular.extend({}, $location.search(), params),
-            pathParams: params});
-          match.$$route = route;
-        }
-      });
-      // No route matched; fallback to "otherwise" route
-      return match || routes[null] && inherit(routes[null], {params: {}, pathParams:{}});
-    }
-
-    /**
-     * @param {Object} newRoute - The new route configuration (as returned by `parseRoute()`).
-     * @param {Object} oldRoute - The previous route configuration (as returned by `parseRoute()`).
-     * @returns {boolean} Whether this is an "update-only" navigation, i.e. the URL maps to the same
-     *                    route and it can be reused (based on the config and the type of change).
-     */
-    function isNavigationUpdateOnly(newRoute, oldRoute) {
-      // IF this is not a forced reload
-      return !forceReload
-          // AND both `newRoute`/`oldRoute` are defined
-          && newRoute && oldRoute
-          // AND they map to the same Route Definition Object
-          && (newRoute.$$route === oldRoute.$$route)
-          // AND `reloadOnUrl` is disabled
-          && (!newRoute.reloadOnUrl
-              // OR `reloadOnSearch` is disabled
-              || (!newRoute.reloadOnSearch
-                  // AND both routes have the same path params
-                  && angular.equals(newRoute.pathParams, oldRoute.pathParams)
-              )
-          );
-    }
-
-    /**
-     * @returns {string} interpolation of the redirect path with the parameters
-     */
-    function interpolate(string, params) {
-      var result = [];
-      angular.forEach((string || '').split(':'), function(segment, i) {
-        if (i === 0) {
-          result.push(segment);
-        } else {
-          var segmentMatch = segment.match(/(\w+)(?:[?*])?(.*)/);
-          var key = segmentMatch[1];
-          result.push(params[key]);
-          result.push(segmentMatch[2] || '');
-          delete params[key];
-        }
-      });
-      return result.join('');
-    }
-  }];
-}
-
-instantiateRoute.$inject = ['$injector'];
-function instantiateRoute($injector) {
-  if (isEagerInstantiationEnabled) {
-    // Instantiate `$route`
-    $injector.get('$route');
-  }
-}
-
-ngRouteModule.provider('$routeParams', $RouteParamsProvider);
-
-
+        fn.getTypeByName = function (name) { return _this.directiveFactoriesByName[name]; };
+        return fn;
+    };
+    return DirectiveIntrospectorProvider;
+})();
 /**
- * @ngdoc service
- * @name $routeParams
- * @requires $route
- * @this
+ * @name ngOutlet
  *
  * @description
- * The `$routeParams` service allows you to retrieve the current set of route parameters.
+ * An ngOutlet is where resolved content goes.
  *
- * Requires the {@link ngRoute `ngRoute`} module to be installed.
+ * ## Use
  *
- * The route parameters are a combination of {@link ng.$location `$location`}'s
- * {@link ng.$location#search `search()`} and {@link ng.$location#path `path()`}.
- * The `path` parameters are extracted when the {@link ngRoute.$route `$route`} path is matched.
+ * ```html
+ * <div ng-outlet="name"></div>
+ * ```
  *
- * In case of parameter name collision, `path` params take precedence over `search` params.
+ * The value for the `ngOutlet` attribute is optional.
+ */
+function ngOutletDirective($animate, $q, $rootRouter) {
+    var rootRouter = $rootRouter;
+    return {
+        restrict: 'AE',
+        transclude: 'element',
+        terminal: true,
+        priority: 400,
+        require: ['?^^ngOutlet', 'ngOutlet'],
+        link: outletLink,
+        controller: (function () {
+            function class_1() {
+            }
+            return class_1;
+        })(),
+        controllerAs: '$$ngOutlet'
+    };
+    function outletLink(scope, element, attrs, ctrls, $transclude) {
+        var Outlet = (function () {
+            function Outlet(controller, router) {
+                this.controller = controller;
+                this.router = router;
+            }
+            Outlet.prototype.cleanupLastView = function () {
+                var _this = this;
+                if (this.previousLeaveAnimation) {
+                    $animate.cancel(this.previousLeaveAnimation);
+                    this.previousLeaveAnimation = null;
+                }
+                if (this.currentScope) {
+                    this.currentScope.$destroy();
+                    this.currentScope = null;
+                }
+                if (this.currentElement) {
+                    this.previousLeaveAnimation = $animate.leave(this.currentElement);
+                    this.previousLeaveAnimation.then(function () { return _this.previousLeaveAnimation = null; });
+                    this.currentElement = null;
+                }
+            };
+            Outlet.prototype.reuse = function (instruction) {
+                var next = $q.when(true);
+                var previousInstruction = this.currentInstruction;
+                this.currentInstruction = instruction;
+                if (this.currentController && this.currentController.$routerOnReuse) {
+                    next = $q.when(this.currentController.$routerOnReuse(this.currentInstruction, previousInstruction));
+                }
+                return next;
+            };
+            Outlet.prototype.routerCanReuse = function (nextInstruction) {
+                var result;
+                if (!this.currentInstruction ||
+                    this.currentInstruction.componentType !== nextInstruction.componentType) {
+                    result = false;
+                }
+                else if (this.currentController && this.currentController.$routerCanReuse) {
+                    result = this.currentController.$routerCanReuse(nextInstruction, this.currentInstruction);
+                }
+                else {
+                    result = nextInstruction === this.currentInstruction ||
+                        angular.equals(nextInstruction.params, this.currentInstruction.params);
+                }
+                return $q.when(result);
+            };
+            Outlet.prototype.routerCanDeactivate = function (instruction) {
+                if (this.currentController && this.currentController.$routerCanDeactivate) {
+                    return $q.when(this.currentController.$routerCanDeactivate(instruction, this.currentInstruction));
+                }
+                return $q.when(true);
+            };
+            Outlet.prototype.deactivate = function (instruction) {
+                if (this.currentController && this.currentController.$routerOnDeactivate) {
+                    return $q.when(this.currentController.$routerOnDeactivate(instruction, this.currentInstruction));
+                }
+                return $q.when();
+            };
+            Outlet.prototype.activate = function (instruction) {
+                var _this = this;
+                this.previousInstruction = this.currentInstruction;
+                this.currentInstruction = instruction;
+                var componentName = this.controller.$$componentName = instruction.componentType;
+                if (typeof componentName !== 'string') {
+                    throw new Error('Component is not a string for ' + instruction.urlPath);
+                }
+                this.controller.$$template = '<' + dashCase(componentName) + ' $router="::$$router"></' +
+                    dashCase(componentName) + '>';
+                this.controller.$$router = this.router.childRouter(instruction.componentType);
+                this.controller.$$outlet = this;
+                var newScope = scope.$new();
+                newScope.$$router = this.controller.$$router;
+                this.deferredActivation = $q.defer();
+                var clone = $transclude(newScope, function (clone) {
+                    $animate.enter(clone, null, _this.currentElement || element);
+                    _this.cleanupLastView();
+                });
+                this.currentElement = clone;
+                this.currentScope = newScope;
+                return this.deferredActivation.promise;
+            };
+            return Outlet;
+        })();
+        var parentCtrl = ctrls[0], myCtrl = ctrls[1], router = (parentCtrl && parentCtrl.$$router) || rootRouter;
+        myCtrl.$$currentComponent = null;
+        router.registerPrimaryOutlet(new Outlet(myCtrl, router));
+    }
+}
+/**
+ * This directive is responsible for compiling the contents of ng-outlet
+ */
+function ngOutletFillContentDirective($compile) {
+    return {
+        restrict: 'EA',
+        priority: -400,
+        require: 'ngOutlet',
+        link: function (scope, element, attrs, ctrl) {
+            var template = ctrl.$$template;
+            element.html(template);
+            $compile(element.contents())(scope);
+        }
+    };
+}
+function routerTriggerDirective($q) {
+    return {
+        require: '^ngOutlet',
+        priority: -1000,
+        link: function (scope, element, attr, ngOutletCtrl) {
+            var promise = $q.when();
+            var outlet = ngOutletCtrl.$$outlet;
+            var currentComponent = outlet.currentController =
+                element.controller(ngOutletCtrl.$$componentName);
+            if (currentComponent.$routerOnActivate) {
+                promise = $q.when(currentComponent.$routerOnActivate(outlet.currentInstruction, outlet.previousInstruction));
+            }
+            promise.then(outlet.deferredActivation.resolve, outlet.deferredActivation.reject);
+        }
+    };
+}
+/**
+ * @name ngLink
+ * @description
+ * Lets you link to different parts of the app, and automatically generates hrefs.
  *
- * The service guarantees that the identity of the `$routeParams` object will remain unchanged
- * (but its properties will likely change) even when a route change occurs.
+ * ## Use
+ * The directive uses a simple syntax: `ng-link="componentName({ param: paramValue })"`
  *
- * Note that the `$routeParams` are only updated *after* a route change completes successfully.
- * This means that you cannot rely on `$routeParams` being correct in route resolve functions.
- * Instead you can use `$route.current.params` to access the new route's parameters.
+ * ### Example
  *
- * @example
  * ```js
- *  // Given:
- *  // URL: http://server.com/index.html#/Chapter/1/Section/2?search=moby
- *  // Route: /Chapter/:chapterId/Section/:sectionId
- *  //
- *  // Then
- *  $routeParams ==> {chapterId:'1', sectionId:'2', search:'moby'}
+ * angular.module('myApp', ['ngComponentRouter'])
+ *   .controller('AppController', ['$rootRouter', function($rootRouter) {
+ *     $rootRouter.config({ path: '/user/:id', component: 'user' });
+ *     this.user = { name: 'Brian', id: 123 };
+ *   });
+ * ```
+ *
+ * ```html
+ * <div ng-controller="AppController as app">
+ *   <a ng-link="user({id: app.user.id})">{{app.user.name}}</a>
+ * </div>
  * ```
  */
-function $RouteParamsProvider() {
-  this.$get = function() { return {}; };
-}
-
-ngRouteModule.directive('ngView', ngViewFactory);
-ngRouteModule.directive('ngView', ngViewFillContentFactory);
-
-
-/**
- * @ngdoc directive
- * @name ngView
- * @restrict ECA
- *
- * @description
- * `ngView` is a directive that complements the {@link ngRoute.$route $route} service by
- * including the rendered template of the current route into the main layout (`index.html`) file.
- * Every time the current route changes, the included view changes with it according to the
- * configuration of the `$route` service.
- *
- * Requires the {@link ngRoute `ngRoute`} module to be installed.
- *
- * @animations
- * | Animation                        | Occurs                              |
- * |----------------------------------|-------------------------------------|
- * | {@link ng.$animate#enter enter}  | when the new element is inserted to the DOM |
- * | {@link ng.$animate#leave leave}  | when the old element is removed from to the DOM  |
- *
- * The enter and leave animation occur concurrently.
- *
- * @scope
- * @priority 400
- * @param {string=} onload Expression to evaluate whenever the view updates.
- *
- * @param {string=} autoscroll Whether `ngView` should call {@link ng.$anchorScroll
- *                  $anchorScroll} to scroll the viewport after the view is updated.
- *
- *                  - If the attribute is not set, disable scrolling.
- *                  - If the attribute is set without value, enable scrolling.
- *                  - Otherwise enable scrolling only if the `autoscroll` attribute value evaluated
- *                    as an expression yields a truthy value.
- * @example
-    <example name="ngView-directive" module="ngViewExample"
-             deps="angular-route.js;angular-animate.js"
-             animations="true" fixBase="true">
-      <file name="index.html">
-        <div ng-controller="MainCtrl as main">
-          Choose:
-          <a href="Book/Moby">Moby</a> |
-          <a href="Book/Moby/ch/1">Moby: Ch1</a> |
-          <a href="Book/Gatsby">Gatsby</a> |
-          <a href="Book/Gatsby/ch/4?key=value">Gatsby: Ch4</a> |
-          <a href="Book/Scarlet">Scarlet Letter</a><br/>
-
-          <div class="view-animate-container">
-            <div ng-view class="view-animate"></div>
-          </div>
-          <hr />
-
-          <pre>$location.path() = {{main.$location.path()}}</pre>
-          <pre>$route.current.templateUrl = {{main.$route.current.templateUrl}}</pre>
-          <pre>$route.current.params = {{main.$route.current.params}}</pre>
-          <pre>$routeParams = {{main.$routeParams}}</pre>
-        </div>
-      </file>
-
-      <file name="book.html">
-        <div>
-          controller: {{book.name}}<br />
-          Book Id: {{book.params.bookId}}<br />
-        </div>
-      </file>
-
-      <file name="chapter.html">
-        <div>
-          controller: {{chapter.name}}<br />
-          Book Id: {{chapter.params.bookId}}<br />
-          Chapter Id: {{chapter.params.chapterId}}
-        </div>
-      </file>
-
-      <file name="animations.css">
-        .view-animate-container {
-          position:relative;
-          height:100px!important;
-          background:white;
-          border:1px solid black;
-          height:40px;
-          overflow:hidden;
+function ngLinkDirective($rootRouter, $parse) {
+    return { require: '?^^ngOutlet', restrict: 'A', link: ngLinkDirectiveLinkFn };
+    function ngLinkDirectiveLinkFn(scope, element, attrs, ctrl) {
+        var router = (ctrl && ctrl.$$router) || $rootRouter;
+        if (!router) {
+            return;
         }
-
-        .view-animate {
-          padding:10px;
+        var instruction = null;
+        var link = attrs.ngLink || '';
+        function getLink(params) {
+            instruction = router.generate(params);
+            return './' + angular.stringifyInstruction(instruction);
         }
-
-        .view-animate.ng-enter, .view-animate.ng-leave {
-          transition:all cubic-bezier(0.250, 0.460, 0.450, 0.940) 1.5s;
-
-          display:block;
-          width:100%;
-          border-left:1px solid black;
-
-          position:absolute;
-          top:0;
-          left:0;
-          right:0;
-          bottom:0;
-          padding:10px;
+        var routeParamsGetter = $parse(link);
+        // we can avoid adding a watcher if it's a literal
+        if (routeParamsGetter.constant) {
+            var params = routeParamsGetter();
+            element.attr('href', getLink(params));
         }
-
-        .view-animate.ng-enter {
-          left:100%;
+        else {
+            scope.$watch(function () { return routeParamsGetter(scope); }, function (params) { return element.attr('href', getLink(params)); }, true);
         }
-        .view-animate.ng-enter.ng-enter-active {
-          left:0;
-        }
-        .view-animate.ng-leave.ng-leave-active {
-          left:-100%;
-        }
-      </file>
-
-      <file name="script.js">
-        angular.module('ngViewExample', ['ngRoute', 'ngAnimate'])
-          .config(['$routeProvider', '$locationProvider',
-            function($routeProvider, $locationProvider) {
-              $routeProvider
-                .when('/Book/:bookId', {
-                  templateUrl: 'book.html',
-                  controller: 'BookCtrl',
-                  controllerAs: 'book'
-                })
-                .when('/Book/:bookId/ch/:chapterId', {
-                  templateUrl: 'chapter.html',
-                  controller: 'ChapterCtrl',
-                  controllerAs: 'chapter'
-                });
-
-              $locationProvider.html5Mode(true);
-          }])
-          .controller('MainCtrl', ['$route', '$routeParams', '$location',
-            function MainCtrl($route, $routeParams, $location) {
-              this.$route = $route;
-              this.$location = $location;
-              this.$routeParams = $routeParams;
-          }])
-          .controller('BookCtrl', ['$routeParams', function BookCtrl($routeParams) {
-            this.name = 'BookCtrl';
-            this.params = $routeParams;
-          }])
-          .controller('ChapterCtrl', ['$routeParams', function ChapterCtrl($routeParams) {
-            this.name = 'ChapterCtrl';
-            this.params = $routeParams;
-          }]);
-
-      </file>
-
-      <file name="protractor.js" type="protractor">
-        it('should load and compile correct template', function() {
-          element(by.linkText('Moby: Ch1')).click();
-          var content = element(by.css('[ng-view]')).getText();
-          expect(content).toMatch(/controller: ChapterCtrl/);
-          expect(content).toMatch(/Book Id: Moby/);
-          expect(content).toMatch(/Chapter Id: 1/);
-
-          element(by.partialLinkText('Scarlet')).click();
-
-          content = element(by.css('[ng-view]')).getText();
-          expect(content).toMatch(/controller: BookCtrl/);
-          expect(content).toMatch(/Book Id: Scarlet/);
+        element.on('click', function (event) {
+            if (event.which !== 1 || !instruction) {
+                return;
+            }
+            $rootRouter.navigateByInstruction(instruction);
+            event.preventDefault();
         });
-      </file>
-    </example>
- */
-
-
-/**
- * @ngdoc event
- * @name ngView#$viewContentLoaded
- * @eventType emit on the current ngView scope
- * @description
- * Emitted every time the ngView content is reloaded.
- */
-ngViewFactory.$inject = ['$route', '$anchorScroll', '$animate'];
-function ngViewFactory($route, $anchorScroll, $animate) {
-  return {
-    restrict: 'ECA',
-    terminal: true,
-    priority: 400,
-    transclude: 'element',
-    link: function(scope, $element, attr, ctrl, $transclude) {
-        var currentScope,
-            currentElement,
-            previousLeaveAnimation,
-            autoScrollExp = attr.autoscroll,
-            onloadExp = attr.onload || '';
-
-        scope.$on('$routeChangeSuccess', update);
-        update();
-
-        function cleanupLastView() {
-          if (previousLeaveAnimation) {
-            $animate.cancel(previousLeaveAnimation);
-            previousLeaveAnimation = null;
-          }
-
-          if (currentScope) {
-            currentScope.$destroy();
-            currentScope = null;
-          }
-          if (currentElement) {
-            previousLeaveAnimation = $animate.leave(currentElement);
-            previousLeaveAnimation.done(function(response) {
-              if (response !== false) previousLeaveAnimation = null;
-            });
-            currentElement = null;
-          }
-        }
-
-        function update() {
-          var locals = $route.current && $route.current.locals,
-              template = locals && locals.$template;
-
-          if (angular.isDefined(template)) {
-            var newScope = scope.$new();
-            var current = $route.current;
-
-            // Note: This will also link all children of ng-view that were contained in the original
-            // html. If that content contains controllers, ... they could pollute/change the scope.
-            // However, using ng-view on an element with additional content does not make sense...
-            // Note: We can't remove them in the cloneAttchFn of $transclude as that
-            // function is called before linking the content, which would apply child
-            // directives to non existing elements.
-            var clone = $transclude(newScope, function(clone) {
-              $animate.enter(clone, null, currentElement || $element).done(function onNgViewEnter(response) {
-                if (response !== false && angular.isDefined(autoScrollExp)
-                  && (!autoScrollExp || scope.$eval(autoScrollExp))) {
-                  $anchorScroll();
-                }
-              });
-              cleanupLastView();
-            });
-
-            currentElement = clone;
-            currentScope = current.scope = newScope;
-            currentScope.$emit('$viewContentLoaded');
-            currentScope.$eval(onloadExp);
-          } else {
-            cleanupLastView();
-          }
-        }
     }
-  };
+}
+function dashCase(str) {
+    return str.replace(/[A-Z]/g, function (match) { return '-' + match.toLowerCase(); });
+}
+/*
+ * A module for adding new a routing system Angular 1.
+ */
+angular.module('ngComponentRouter', [])
+    .directive('ngOutlet', ['$animate', '$q', '$rootRouter', ngOutletDirective])
+    .directive('ngOutlet', ['$compile', ngOutletFillContentDirective])
+    .directive('ngLink', ['$rootRouter', '$parse', ngLinkDirective])
+    .directive('$router', ['$q', routerTriggerDirective]);
+/*
+ * A module for inspecting controller constructors
+ */
+angular.module('ng')
+    .provider('$$directiveIntrospector', DirectiveIntrospectorProvider)
+    .config(['$compileProvider', '$$directiveIntrospectorProvider', compilerProviderDecorator]);
+
+angular.module('ngComponentRouter').
+    value('$route', null). // can be overloaded with ngRouteShim
+    // Because Angular 1 has no notion of a root component, we use an object with unique identity
+    // to represent this. Can be overloaded with a component name
+    value('$routerRootComponent', new Object()).
+    factory('$rootRouter', ['$q', '$location', '$$directiveIntrospector', '$browser', '$rootScope', '$injector', '$routerRootComponent', routerFactory]);
+
+function routerFactory($q, $location, $$directiveIntrospector, $browser, $rootScope, $injector, $routerRootComponent) {
+
+  // When this file is processed, the line below is replaced with
+  // the contents of `../lib/facades.es5`.
+  function CONST() {
+  return (function(target) {
+    return target;
+  });
 }
 
-// This directive is called during the $transclude call of the first `ngView` directive.
-// It will replace and compile the content of the element with the loaded template.
-// We need this directive so that the element content is already filled when
-// the link function of another directive on the same element as ngView
-// is called.
-ngViewFillContentFactory.$inject = ['$compile', '$controller', '$route'];
-function ngViewFillContentFactory($compile, $controller, $route) {
-  return {
-    restrict: 'ECA',
-    priority: -400,
-    link: function(scope, $element) {
-      var current = $route.current,
-          locals = current.locals;
+function CONST_EXPR(expr) {
+  return expr;
+}
 
-      $element.html(locals.$template);
+function isPresent (x) {
+  return !!x;
+}
 
-      var link = $compile($element.contents());
+function isBlank (x) {
+  return !x;
+}
 
-      if (current.controller) {
-        locals.$scope = scope;
-        var controller = $controller(current.controller, locals);
-        if (current.controllerAs) {
-          scope[current.controllerAs] = controller;
-        }
-        $element.data('$ngControllerController', controller);
-        $element.children().data('$ngControllerController', controller);
+function isString(obj) {
+  return typeof obj === 'string';
+}
+
+function isType (x) {
+  return typeof x === 'function';
+}
+
+function isStringMap(obj) {
+  return typeof obj === 'object' && obj !== null;
+}
+
+function isArray(obj) {
+  return Array.isArray(obj);
+}
+
+function getTypeNameForDebugging (fn) {
+  return fn.name || 'Root';
+}
+
+var PromiseWrapper = {
+  resolve: function (reason) {
+    return $q.when(reason);
+  },
+
+  reject: function (reason) {
+    return $q.reject(reason);
+  },
+
+  catchError: function (promise, fn) {
+    return promise.then(null, fn);
+  },
+  all: function (promises) {
+    return $q.all(promises);
+  }
+};
+
+var RegExpWrapper = {
+  create: function(regExpStr, flags) {
+    flags = flags ? flags.replace(/g/g, '') : '';
+    return new RegExp(regExpStr, flags + 'g');
+  },
+  firstMatch: function(regExp, input) {
+    regExp.lastIndex = 0;
+    return regExp.exec(input);
+  },
+  matcher: function (regExp, input) {
+    regExp.lastIndex = 0;
+    return { re: regExp, input: input };
+  }
+};
+
+var reflector = {
+  annotations: function (fn) {
+    //TODO: implement me
+    return fn.annotations || [];
+  }
+};
+
+var MapWrapper = {
+  create: function() {
+    return new Map();
+  },
+
+  get: function(m, k) {
+    return m.get(k);
+  },
+
+  set: function(m, k, v) {
+    return m.set(k, v);
+  },
+
+  contains: function (m, k) {
+    return m.has(k);
+  },
+
+  forEach: function (m, fn) {
+    return m.forEach(fn);
+  }
+};
+
+var StringMapWrapper = {
+  create: function () {
+    return {};
+  },
+
+  set: function (m, k, v) {
+    return m[k] = v;
+  },
+
+  get: function (m, k) {
+    return m.hasOwnProperty(k) ? m[k] : undefined;
+  },
+
+  contains: function (m, k) {
+    return m.hasOwnProperty(k);
+  },
+
+  keys: function(map) {
+    return Object.keys(map);
+  },
+
+  isEmpty: function(map) {
+    for (var prop in map) {
+      if (map.hasOwnProperty(prop)) {
+        return false;
       }
-      scope[current.resolveAs || '$resolve'] = locals;
-
-      link(scope);
     }
+    return true;
+  },
+
+  delete: function(map, key) {
+    delete map[key];
+  },
+
+  forEach: function (m, fn) {
+    for (var prop in m) {
+      if (m.hasOwnProperty(prop)) {
+        fn(m[prop], prop);
+      }
+    }
+  },
+
+  equals: function (m1, m2) {
+    var k1 = Object.keys(m1);
+    var k2 = Object.keys(m2);
+    if (k1.length != k2.length) {
+      return false;
+    }
+    var key;
+    for (var i = 0; i < k1.length; i++) {
+      key = k1[i];
+      if (m1[key] !== m2[key]) {
+        return false;
+      }
+    }
+    return true;
+  },
+
+  merge: function(m1, m2) {
+    var m = {};
+    for (var attr in m1) {
+      if (m1.hasOwnProperty(attr)) {
+        m[attr] = m1[attr];
+      }
+    }
+    for (var attr in m2) {
+      if (m2.hasOwnProperty(attr)) {
+        m[attr] = m2[attr];
+      }
+    }
+    return m;
+  }
+};
+
+var List = Array;
+var ListWrapper = {
+  toJSON: function(l) {
+    return JSON.stringify(l);
+  },
+
+  clear: function (l) {
+    l.length = 0;
+  },
+
+  create: function () {
+    return [];
+  },
+
+  push: function (l, v) {
+    return l.push(v);
+  },
+
+  forEach: function (l, fn) {
+    return l.forEach(fn);
+  },
+
+  first: function(array) {
+    if (!array)
+      return null;
+    return array[0];
+  },
+
+  last: function(array) {
+    return (array && array.length) > 0 ? array[array.length - 1] : null;
+  },
+
+  map: function (l, fn) {
+    return l.map(fn);
+  },
+
+  join: function (l, str) {
+    return l.join(str);
+  },
+
+  reduce: function(list, fn, init) {
+    return list.reduce(fn, init);
+  },
+
+  filter: function(array, pred) {
+    return array.filter(pred);
+  },
+
+  concat: function(a, b) {
+    return a.concat(b);
+  },
+
+  slice: function(l) {
+    var from = arguments[1] !== (void 0) ? arguments[1] : 0;
+    var to = arguments[2] !== (void 0) ? arguments[2] : null;
+    return l.slice(from, to === null ? undefined : to);
+  },
+
+  maximum: function(list, predicate) {
+    if (list.length == 0) {
+      return null;
+    }
+    var solution = null;
+    var maxValue = -Infinity;
+    for (var index = 0; index < list.length; index++) {
+      var candidate = list[index];
+      if (isBlank(candidate)) {
+        continue;
+      }
+      var candidateValue = predicate(candidate);
+      if (candidateValue > maxValue) {
+        solution = candidate;
+        maxValue = candidateValue;
+      }
+    }
+    return solution;
+  }
+};
+
+var StringWrapper = {
+  charCodeAt: function(s, i) {
+    return s.charCodeAt(i);
+  },
+
+  equals: function (s1, s2) {
+    return s1 === s2;
+  },
+
+  split: function(s, re) {
+    return s.split(re);
+  },
+
+  replaceAll: function(s, from, replace) {
+    return s.replace(from, replace);
+  },
+
+  replaceAllMapped: function(s, from, cb) {
+    return s.replace(from, function(matches) {
+      // Remove offset & string from the result array
+      matches.splice(-2, 2);
+      // The callback receives match, p1, ..., pn
+      return cb.apply(null, matches);
+    });
+  },
+
+  contains: function(s, substr) {
+    return s.indexOf(substr) != -1;
+  }
+
+};
+
+//TODO: implement?
+// I think it's too heavy to ask 1.x users to bring in Rx for the router...
+function EventEmitter() {}
+
+var BaseException = Error;
+
+var ObservableWrapper = {
+  callNext: function(ob, val) {
+    ob.fn(val);
+  },
+  callEmit: function(ob, val) {
+    ob.fn(val);
+  },
+
+  subscribe: function(ob, fn) {
+    ob.fn = fn;
+  }
+};
+
+// TODO: https://github.com/angular/angular.js/blob/master/src/ng/browser.js#L227-L265
+var $__router_47_location__ = {
+  Location: Location
+};
+
+function Location(){}
+Location.prototype.subscribe = function () {
+  //TODO: implement
+};
+Location.prototype.path = function () {
+  return $location.url();
+};
+Location.prototype.go = function (path, query) {
+  return $location.url(path + query);
+};
+
+
+  var exports = {
+    Injectable: function () {},
+    OpaqueToken: function () {},
+    Inject: function () {}
   };
+  var require = function () {return exports;};
+
+  // When this file is processed, the line below is replaced with
+  // the contents of the compiled TypeScript classes.
+  var TouchMap = (function () {
+    function TouchMap(map) {
+        var _this = this;
+        this.map = {};
+        this.keys = {};
+        if (isPresent(map)) {
+            StringMapWrapper.forEach(map, function (value, key) {
+                _this.map[key] = isPresent(value) ? value.toString() : null;
+                _this.keys[key] = true;
+            });
+        }
+    }
+    TouchMap.prototype.get = function (key) {
+        StringMapWrapper.delete(this.keys, key);
+        return this.map[key];
+    };
+    TouchMap.prototype.getUnused = function () {
+        var _this = this;
+        var unused = {};
+        var keys = StringMapWrapper.keys(this.keys);
+        keys.forEach(function (key) { return unused[key] = StringMapWrapper.get(_this.map, key); });
+        return unused;
+    };
+    return TouchMap;
+})();
+exports.TouchMap = TouchMap;
+function normalizeString(obj) {
+    if (isBlank(obj)) {
+        return null;
+    }
+    else {
+        return obj.toString();
+    }
+}
+exports.normalizeString = normalizeString;
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+};
+function convertUrlParamsToArray(urlParams) {
+    var paramsArray = [];
+    if (isBlank(urlParams)) {
+        return [];
+    }
+    StringMapWrapper.forEach(urlParams, function (value, key) { paramsArray.push((value === true) ? key : key + '=' + value); });
+    return paramsArray;
+}
+exports.convertUrlParamsToArray = convertUrlParamsToArray;
+// Convert an object of url parameters into a string that can be used in an URL
+function serializeParams(urlParams, joiner) {
+    if (joiner === void 0) { joiner = '&'; }
+    return convertUrlParamsToArray(urlParams).join(joiner);
+}
+exports.serializeParams = serializeParams;
+/**
+ * This class represents a parsed URL
+ */
+var Url = (function () {
+    function Url(path, child, auxiliary, params) {
+        if (child === void 0) { child = null; }
+        if (auxiliary === void 0) { auxiliary = CONST_EXPR([]); }
+        if (params === void 0) { params = CONST_EXPR({}); }
+        this.path = path;
+        this.child = child;
+        this.auxiliary = auxiliary;
+        this.params = params;
+    }
+    Url.prototype.toString = function () {
+        return this.path + this._matrixParamsToString() + this._auxToString() + this._childString();
+    };
+    Url.prototype.segmentToString = function () { return this.path + this._matrixParamsToString(); };
+    /** @internal */
+    Url.prototype._auxToString = function () {
+        return this.auxiliary.length > 0 ?
+            ('(' + this.auxiliary.map(function (sibling) { return sibling.toString(); }).join('//') + ')') :
+            '';
+    };
+    Url.prototype._matrixParamsToString = function () {
+        var paramString = serializeParams(this.params, ';');
+        if (paramString.length > 0) {
+            return ';' + paramString;
+        }
+        return '';
+    };
+    /** @internal */
+    Url.prototype._childString = function () { return isPresent(this.child) ? ('/' + this.child.toString()) : ''; };
+    return Url;
+})();
+exports.Url = Url;
+var RootUrl = (function (_super) {
+    __extends(RootUrl, _super);
+    function RootUrl(path, child, auxiliary, params) {
+        if (child === void 0) { child = null; }
+        if (auxiliary === void 0) { auxiliary = CONST_EXPR([]); }
+        if (params === void 0) { params = null; }
+        _super.call(this, path, child, auxiliary, params);
+    }
+    RootUrl.prototype.toString = function () {
+        return this.path + this._auxToString() + this._childString() + this._queryParamsToString();
+    };
+    RootUrl.prototype.segmentToString = function () { return this.path + this._queryParamsToString(); };
+    RootUrl.prototype._queryParamsToString = function () {
+        if (isBlank(this.params)) {
+            return '';
+        }
+        return '?' + serializeParams(this.params);
+    };
+    return RootUrl;
+})(Url);
+exports.RootUrl = RootUrl;
+function pathSegmentsToUrl(pathSegments) {
+    var url = new Url(pathSegments[pathSegments.length - 1]);
+    for (var i = pathSegments.length - 2; i >= 0; i -= 1) {
+        url = new Url(pathSegments[i], url);
+    }
+    return url;
+}
+exports.pathSegmentsToUrl = pathSegmentsToUrl;
+var SEGMENT_RE = RegExpWrapper.create('^[^\\/\\(\\)\\?;=&#]+');
+function matchUrlSegment(str) {
+    var match = RegExpWrapper.firstMatch(SEGMENT_RE, str);
+    return isPresent(match) ? match[0] : '';
+}
+var UrlParser = (function () {
+    function UrlParser() {
+    }
+    UrlParser.prototype.peekStartsWith = function (str) { return this._remaining.startsWith(str); };
+    UrlParser.prototype.capture = function (str) {
+        if (!this._remaining.startsWith(str)) {
+            throw new BaseException("Expected \"" + str + "\".");
+        }
+        this._remaining = this._remaining.substring(str.length);
+    };
+    UrlParser.prototype.parse = function (url) {
+        this._remaining = url;
+        if (url == '' || url == '/') {
+            return new Url('');
+        }
+        return this.parseRoot();
+    };
+    // segment + (aux segments) + (query params)
+    UrlParser.prototype.parseRoot = function () {
+        if (this.peekStartsWith('/')) {
+            this.capture('/');
+        }
+        var path = matchUrlSegment(this._remaining);
+        this.capture(path);
+        var aux = [];
+        if (this.peekStartsWith('(')) {
+            aux = this.parseAuxiliaryRoutes();
+        }
+        if (this.peekStartsWith(';')) {
+            // TODO: should these params just be dropped?
+            this.parseMatrixParams();
+        }
+        var child = null;
+        if (this.peekStartsWith('/') && !this.peekStartsWith('//')) {
+            this.capture('/');
+            child = this.parseSegment();
+        }
+        var queryParams = null;
+        if (this.peekStartsWith('?')) {
+            queryParams = this.parseQueryParams();
+        }
+        return new RootUrl(path, child, aux, queryParams);
+    };
+    // segment + (matrix params) + (aux segments)
+    UrlParser.prototype.parseSegment = function () {
+        if (this._remaining.length == 0) {
+            return null;
+        }
+        if (this.peekStartsWith('/')) {
+            this.capture('/');
+        }
+        var path = matchUrlSegment(this._remaining);
+        this.capture(path);
+        var matrixParams = null;
+        if (this.peekStartsWith(';')) {
+            matrixParams = this.parseMatrixParams();
+        }
+        var aux = [];
+        if (this.peekStartsWith('(')) {
+            aux = this.parseAuxiliaryRoutes();
+        }
+        var child = null;
+        if (this.peekStartsWith('/') && !this.peekStartsWith('//')) {
+            this.capture('/');
+            child = this.parseSegment();
+        }
+        return new Url(path, child, aux, matrixParams);
+    };
+    UrlParser.prototype.parseQueryParams = function () {
+        var params = {};
+        this.capture('?');
+        this.parseParam(params);
+        while (this._remaining.length > 0 && this.peekStartsWith('&')) {
+            this.capture('&');
+            this.parseParam(params);
+        }
+        return params;
+    };
+    UrlParser.prototype.parseMatrixParams = function () {
+        var params = {};
+        while (this._remaining.length > 0 && this.peekStartsWith(';')) {
+            this.capture(';');
+            this.parseParam(params);
+        }
+        return params;
+    };
+    UrlParser.prototype.parseParam = function (params) {
+        var key = matchUrlSegment(this._remaining);
+        if (isBlank(key)) {
+            return;
+        }
+        this.capture(key);
+        var value = true;
+        if (this.peekStartsWith('=')) {
+            this.capture('=');
+            var valueMatch = matchUrlSegment(this._remaining);
+            if (isPresent(valueMatch)) {
+                value = valueMatch;
+                this.capture(value);
+            }
+        }
+        params[key] = value;
+    };
+    UrlParser.prototype.parseAuxiliaryRoutes = function () {
+        var routes = [];
+        this.capture('(');
+        while (!this.peekStartsWith(')') && this._remaining.length > 0) {
+            routes.push(this.parseSegment());
+            if (this.peekStartsWith('//')) {
+                this.capture('//');
+            }
+        }
+        this.capture(')');
+        return routes;
+    };
+    return UrlParser;
+})();
+exports.UrlParser = UrlParser;
+exports.parser = new UrlParser();
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var RouteLifecycleHook = (function () {
+    function RouteLifecycleHook(name) {
+        this.name = name;
+    }
+    RouteLifecycleHook = __decorate([
+        CONST()
+    ], RouteLifecycleHook);
+    return RouteLifecycleHook;
+})();
+exports.RouteLifecycleHook = RouteLifecycleHook;
+var CanActivate = (function () {
+    function CanActivate(fn) {
+        this.fn = fn;
+    }
+    CanActivate = __decorate([
+        CONST()
+    ], CanActivate);
+    return CanActivate;
+})();
+exports.CanActivate = CanActivate;
+exports.routerCanReuse = CONST_EXPR(new RouteLifecycleHook("routerCanReuse"));
+exports.routerCanDeactivate = CONST_EXPR(new RouteLifecycleHook("routerCanDeactivate"));
+exports.routerOnActivate = CONST_EXPR(new RouteLifecycleHook("routerOnActivate"));
+exports.routerOnReuse = CONST_EXPR(new RouteLifecycleHook("routerOnReuse"));
+exports.routerOnDeactivate = CONST_EXPR(new RouteLifecycleHook("routerOnDeactivate"));
+var lifecycle_annotations_impl_1 = require('./lifecycle_annotations_impl');
+function hasLifecycleHook(e, type) {
+    if (!(type instanceof Type))
+        return false;
+    return e.name in type.prototype;
+}
+exports.hasLifecycleHook = hasLifecycleHook;
+function getCanActivateHook(type) {
+    var annotations = reflector.annotations(type);
+    for (var i = 0; i < annotations.length; i += 1) {
+        var annotation = annotations[i];
+        if (annotation instanceof lifecycle_annotations_impl_1.CanActivate) {
+            return annotation.fn;
+        }
+    }
+    return null;
+}
+exports.getCanActivateHook = getCanActivateHook;
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+};
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var route_definition_1 = require('../route_definition');
+exports.RouteDefinition = route_definition_1.RouteDefinition;
+/**
+ * The `RouteConfig` decorator defines routes for a given component.
+ *
+ * It takes an array of {@link RouteDefinition}s.
+ */
+var RouteConfig = (function () {
+    function RouteConfig(configs) {
+        this.configs = configs;
+    }
+    RouteConfig = __decorate([
+        CONST()
+    ], RouteConfig);
+    return RouteConfig;
+})();
+exports.RouteConfig = RouteConfig;
+var AbstractRoute = (function () {
+    function AbstractRoute(_a) {
+        var name = _a.name, useAsDefault = _a.useAsDefault, path = _a.path, regex = _a.regex, serializer = _a.serializer, data = _a.data;
+        this.name = name;
+        this.useAsDefault = useAsDefault;
+        this.path = path;
+        this.regex = regex;
+        this.serializer = serializer;
+        this.data = data;
+    }
+    AbstractRoute = __decorate([
+        CONST()
+    ], AbstractRoute);
+    return AbstractRoute;
+})();
+exports.AbstractRoute = AbstractRoute;
+/**
+ * `Route` is a type of {@link RouteDefinition} used to route a path to a component.
+ *
+ * It has the following properties:
+ * - `path` is a string that uses the route matcher DSL.
+ * - `component` a component type.
+ * - `name` is an optional `CamelCase` string representing the name of the route.
+ * - `data` is an optional property of any type representing arbitrary route metadata for the given
+ * route. It is injectable via {@link RouteData}.
+ * - `useAsDefault` is a boolean value. If `true`, the child route will be navigated to if no child
+ * route is specified during the navigation.
+ *
+ * ### Example
+ * ```
+ * import {RouteConfig, Route} from 'angular2/router';
+ *
+ * @RouteConfig([
+ *   new Route({path: '/home', component: HomeCmp, name: 'HomeCmp' })
+ * ])
+ * class MyApp {}
+ * ```
+ */
+var Route = (function (_super) {
+    __extends(Route, _super);
+    function Route(_a) {
+        var name = _a.name, useAsDefault = _a.useAsDefault, path = _a.path, regex = _a.regex, serializer = _a.serializer, data = _a.data, component = _a.component;
+        _super.call(this, {
+            name: name,
+            useAsDefault: useAsDefault,
+            path: path,
+            regex: regex,
+            serializer: serializer,
+            data: data
+        });
+        this.aux = null;
+        this.component = component;
+    }
+    Route = __decorate([
+        CONST()
+    ], Route);
+    return Route;
+})(AbstractRoute);
+exports.Route = Route;
+/**
+ * `AuxRoute` is a type of {@link RouteDefinition} used to define an auxiliary route.
+ *
+ * It takes an object with the following properties:
+ * - `path` is a string that uses the route matcher DSL.
+ * - `component` a component type.
+ * - `name` is an optional `CamelCase` string representing the name of the route.
+ * - `data` is an optional property of any type representing arbitrary route metadata for the given
+ * route. It is injectable via {@link RouteData}.
+ *
+ * ### Example
+ * ```
+ * import {RouteConfig, AuxRoute} from 'angular2/router';
+ *
+ * @RouteConfig([
+ *   new AuxRoute({path: '/home', component: HomeCmp})
+ * ])
+ * class MyApp {}
+ * ```
+ */
+var AuxRoute = (function (_super) {
+    __extends(AuxRoute, _super);
+    function AuxRoute(_a) {
+        var name = _a.name, useAsDefault = _a.useAsDefault, path = _a.path, regex = _a.regex, serializer = _a.serializer, data = _a.data, component = _a.component;
+        _super.call(this, {
+            name: name,
+            useAsDefault: useAsDefault,
+            path: path,
+            regex: regex,
+            serializer: serializer,
+            data: data
+        });
+        this.component = component;
+    }
+    AuxRoute = __decorate([
+        CONST()
+    ], AuxRoute);
+    return AuxRoute;
+})(AbstractRoute);
+exports.AuxRoute = AuxRoute;
+/**
+ * `AsyncRoute` is a type of {@link RouteDefinition} used to route a path to an asynchronously
+ * loaded component.
+ *
+ * It has the following properties:
+ * - `path` is a string that uses the route matcher DSL.
+ * - `loader` is a function that returns a promise that resolves to a component.
+ * - `name` is an optional `CamelCase` string representing the name of the route.
+ * - `data` is an optional property of any type representing arbitrary route metadata for the given
+ * route. It is injectable via {@link RouteData}.
+ * - `useAsDefault` is a boolean value. If `true`, the child route will be navigated to if no child
+ * route is specified during the navigation.
+ *
+ * ### Example
+ * ```
+ * import {RouteConfig, AsyncRoute} from 'angular2/router';
+ *
+ * @RouteConfig([
+ *   new AsyncRoute({path: '/home', loader: () => Promise.resolve(MyLoadedCmp), name:
+ * 'MyLoadedCmp'})
+ * ])
+ * class MyApp {}
+ * ```
+ */
+var AsyncRoute = (function (_super) {
+    __extends(AsyncRoute, _super);
+    function AsyncRoute(_a) {
+        var name = _a.name, useAsDefault = _a.useAsDefault, path = _a.path, regex = _a.regex, serializer = _a.serializer, data = _a.data, loader = _a.loader;
+        _super.call(this, {
+            name: name,
+            useAsDefault: useAsDefault,
+            path: path,
+            regex: regex,
+            serializer: serializer,
+            data: data
+        });
+        this.aux = null;
+        this.loader = loader;
+    }
+    AsyncRoute = __decorate([
+        CONST()
+    ], AsyncRoute);
+    return AsyncRoute;
+})(AbstractRoute);
+exports.AsyncRoute = AsyncRoute;
+/**
+ * `Redirect` is a type of {@link RouteDefinition} used to route a path to a canonical route.
+ *
+ * It has the following properties:
+ * - `path` is a string that uses the route matcher DSL.
+ * - `redirectTo` is an array representing the link DSL.
+ *
+ * Note that redirects **do not** affect how links are generated. For that, see the `useAsDefault`
+ * option.
+ *
+ * ### Example
+ * ```
+ * import {RouteConfig, Route, Redirect} from 'angular2/router';
+ *
+ * @RouteConfig([
+ *   new Redirect({path: '/', redirectTo: ['/Home'] }),
+ *   new Route({path: '/home', component: HomeCmp, name: 'Home'})
+ * ])
+ * class MyApp {}
+ * ```
+ */
+var Redirect = (function (_super) {
+    __extends(Redirect, _super);
+    function Redirect(_a) {
+        var name = _a.name, useAsDefault = _a.useAsDefault, path = _a.path, regex = _a.regex, serializer = _a.serializer, data = _a.data, redirectTo = _a.redirectTo;
+        _super.call(this, {
+            name: name,
+            useAsDefault: useAsDefault,
+            path: path,
+            regex: regex,
+            serializer: serializer,
+            data: data
+        });
+        this.redirectTo = redirectTo;
+    }
+    Redirect = __decorate([
+        CONST()
+    ], Redirect);
+    return Redirect;
+})(AbstractRoute);
+exports.Redirect = Redirect;
+var route_config_decorator_1 = require('./route_config_decorator');
+/**
+ * Given a JS Object that represents a route config, returns a corresponding Route, AsyncRoute,
+ * AuxRoute or Redirect object.
+ *
+ * Also wraps an AsyncRoute's loader function to add the loaded component's route config to the
+ * `RouteRegistry`.
+ */
+function normalizeRouteConfig(config, registry) {
+    if (config instanceof route_config_decorator_1.AsyncRoute) {
+        var wrappedLoader = wrapLoaderToReconfigureRegistry(config.loader, registry);
+        return new route_config_decorator_1.AsyncRoute({
+            path: config.path,
+            loader: wrappedLoader,
+            name: config.name,
+            data: config.data,
+            useAsDefault: config.useAsDefault
+        });
+    }
+    if (config instanceof route_config_decorator_1.Route || config instanceof route_config_decorator_1.Redirect || config instanceof route_config_decorator_1.AuxRoute) {
+        return config;
+    }
+    if ((+!!config.component) + (+!!config.redirectTo) + (+!!config.loader) != 1) {
+        throw new BaseException("Route config should contain exactly one \"component\", \"loader\", or \"redirectTo\" property.");
+    }
+    if (config.as && config.name) {
+        throw new BaseException("Route config should contain exactly one \"as\" or \"name\" property.");
+    }
+    if (config.as) {
+        config.name = config.as;
+    }
+    if (config.loader) {
+        var wrappedLoader = wrapLoaderToReconfigureRegistry(config.loader, registry);
+        return new route_config_decorator_1.AsyncRoute({
+            path: config.path,
+            loader: wrappedLoader,
+            name: config.name,
+            data: config.data,
+            useAsDefault: config.useAsDefault
+        });
+    }
+    if (config.aux) {
+        return new route_config_decorator_1.AuxRoute({ path: config.aux, component: config.component, name: config.name });
+    }
+    if (config.component) {
+        if (typeof config.component == 'object') {
+            var componentDefinitionObject = config.component;
+            if (componentDefinitionObject.type == 'constructor') {
+                return new route_config_decorator_1.Route({
+                    path: config.path,
+                    component: componentDefinitionObject.constructor,
+                    name: config.name,
+                    data: config.data,
+                    useAsDefault: config.useAsDefault
+                });
+            }
+            else if (componentDefinitionObject.type == 'loader') {
+                return new route_config_decorator_1.AsyncRoute({
+                    path: config.path,
+                    loader: componentDefinitionObject.loader,
+                    name: config.name,
+                    data: config.data,
+                    useAsDefault: config.useAsDefault
+                });
+            }
+            else {
+                throw new BaseException("Invalid component type \"" + componentDefinitionObject.type + "\". Valid types are \"constructor\" and \"loader\".");
+            }
+        }
+        return new route_config_decorator_1.Route(config);
+    }
+    if (config.redirectTo) {
+        return new route_config_decorator_1.Redirect({ path: config.path, redirectTo: config.redirectTo });
+    }
+    return config;
+}
+exports.normalizeRouteConfig = normalizeRouteConfig;
+function wrapLoaderToReconfigureRegistry(loader, registry) {
+    return function () {
+        return loader().then(function (componentType) {
+            registry.configFromComponent(componentType);
+            return componentType;
+        });
+    };
+}
+function assertComponentExists(component, path) {
+    if (!isType(component)) {
+        throw new BaseException("Component for route \"" + path + "\" is not defined, or is not a class.");
+    }
+}
+exports.assertComponentExists = assertComponentExists;
+var instruction_1 = require('../../instruction');
+var AsyncRouteHandler = (function () {
+    function AsyncRouteHandler(_loader, data) {
+        if (data === void 0) { data = null; }
+        this._loader = _loader;
+        /** @internal */
+        this._resolvedComponent = null;
+        this.data = isPresent(data) ? new instruction_1.RouteData(data) : instruction_1.BLANK_ROUTE_DATA;
+    }
+    AsyncRouteHandler.prototype.resolveComponentType = function () {
+        var _this = this;
+        if (isPresent(this._resolvedComponent)) {
+            return this._resolvedComponent;
+        }
+        return this._resolvedComponent = this._loader().then(function (componentType) {
+            _this.componentType = componentType;
+            return componentType;
+        });
+    };
+    return AsyncRouteHandler;
+})();
+exports.AsyncRouteHandler = AsyncRouteHandler;
+var instruction_1 = require('../../instruction');
+var SyncRouteHandler = (function () {
+    function SyncRouteHandler(componentType, data) {
+        this.componentType = componentType;
+        /** @internal */
+        this._resolvedComponent = null;
+        this._resolvedComponent = PromiseWrapper.resolve(componentType);
+        this.data = isPresent(data) ? new instruction_1.RouteData(data) : instruction_1.BLANK_ROUTE_DATA;
+    }
+    SyncRouteHandler.prototype.resolveComponentType = function () { return this._resolvedComponent; };
+    return SyncRouteHandler;
+})();
+exports.SyncRouteHandler = SyncRouteHandler;
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+};
+var url_parser_1 = require('../url_parser');
+var instruction_1 = require('../instruction');
+// RouteMatch objects hold information about a match between a rule and a URL
+var RouteMatch = (function () {
+    function RouteMatch() {
+    }
+    return RouteMatch;
+})();
+exports.RouteMatch = RouteMatch;
+var PathMatch = (function (_super) {
+    __extends(PathMatch, _super);
+    function PathMatch(instruction, remaining, remainingAux) {
+        _super.call(this);
+        this.instruction = instruction;
+        this.remaining = remaining;
+        this.remainingAux = remainingAux;
+    }
+    return PathMatch;
+})(RouteMatch);
+exports.PathMatch = PathMatch;
+var RedirectMatch = (function (_super) {
+    __extends(RedirectMatch, _super);
+    function RedirectMatch(redirectTo, specificity) {
+        _super.call(this);
+        this.redirectTo = redirectTo;
+        this.specificity = specificity;
+    }
+    return RedirectMatch;
+})(RouteMatch);
+exports.RedirectMatch = RedirectMatch;
+var RedirectRule = (function () {
+    function RedirectRule(_pathRecognizer, redirectTo) {
+        this._pathRecognizer = _pathRecognizer;
+        this.redirectTo = redirectTo;
+        this.hash = this._pathRecognizer.hash;
+    }
+    Object.defineProperty(RedirectRule.prototype, "path", {
+        get: function () { return this._pathRecognizer.toString(); },
+        set: function (val) { throw new BaseException('you cannot set the path of a RedirectRule directly'); },
+        enumerable: true,
+        configurable: true
+    });
+    /**
+     * Returns `null` or a `ParsedUrl` representing the new path to match
+     */
+    RedirectRule.prototype.recognize = function (beginningSegment) {
+        var match = null;
+        if (isPresent(this._pathRecognizer.matchUrl(beginningSegment))) {
+            match = new RedirectMatch(this.redirectTo, this._pathRecognizer.specificity);
+        }
+        return PromiseWrapper.resolve(match);
+    };
+    RedirectRule.prototype.generate = function (params) {
+        throw new BaseException("Tried to generate a redirect.");
+    };
+    return RedirectRule;
+})();
+exports.RedirectRule = RedirectRule;
+// represents something like '/foo/:bar'
+var RouteRule = (function () {
+    // TODO: cache component instruction instances by params and by ParsedUrl instance
+    function RouteRule(_routePath, handler) {
+        this._routePath = _routePath;
+        this.handler = handler;
+        this._cache = new Map();
+        this.specificity = this._routePath.specificity;
+        this.hash = this._routePath.hash;
+        this.terminal = this._routePath.terminal;
+    }
+    Object.defineProperty(RouteRule.prototype, "path", {
+        get: function () { return this._routePath.toString(); },
+        set: function (val) { throw new BaseException('you cannot set the path of a RouteRule directly'); },
+        enumerable: true,
+        configurable: true
+    });
+    RouteRule.prototype.recognize = function (beginningSegment) {
+        var _this = this;
+        var res = this._routePath.matchUrl(beginningSegment);
+        if (isBlank(res)) {
+            return null;
+        }
+        return this.handler.resolveComponentType().then(function (_) {
+            var componentInstruction = _this._getInstruction(res.urlPath, res.urlParams, res.allParams);
+            return new PathMatch(componentInstruction, res.rest, res.auxiliary);
+        });
+    };
+    RouteRule.prototype.generate = function (params) {
+        var generated = this._routePath.generateUrl(params);
+        var urlPath = generated.urlPath;
+        var urlParams = generated.urlParams;
+        return this._getInstruction(urlPath, url_parser_1.convertUrlParamsToArray(urlParams), params);
+    };
+    RouteRule.prototype.generateComponentPathValues = function (params) {
+        return this._routePath.generateUrl(params);
+    };
+    RouteRule.prototype._getInstruction = function (urlPath, urlParams, params) {
+        if (isBlank(this.handler.componentType)) {
+            throw new BaseException("Tried to get instruction before the type was loaded.");
+        }
+        var hashKey = urlPath + '?' + urlParams.join('&');
+        if (this._cache.has(hashKey)) {
+            return this._cache.get(hashKey);
+        }
+        var instruction = new instruction_1.ComponentInstruction(urlPath, urlParams, this.handler.data, this.handler.componentType, this.terminal, this.specificity, params);
+        this._cache.set(hashKey, instruction);
+        return instruction;
+    };
+    return RouteRule;
+})();
+exports.RouteRule = RouteRule;
+var rules_1 = require('./rules');
+var route_config_impl_1 = require('../route_config/route_config_impl');
+var async_route_handler_1 = require('./route_handlers/async_route_handler');
+var sync_route_handler_1 = require('./route_handlers/sync_route_handler');
+var param_route_path_1 = require('./route_paths/param_route_path');
+var regex_route_path_1 = require('./route_paths/regex_route_path');
+/**
+ * A `RuleSet` is responsible for recognizing routes for a particular component.
+ * It is consumed by `RouteRegistry`, which knows how to recognize an entire hierarchy of
+ * components.
+ */
+var RuleSet = (function () {
+    function RuleSet() {
+        this.rulesByName = new Map();
+        // map from name to rule
+        this.auxRulesByName = new Map();
+        // map from starting path to rule
+        this.auxRulesByPath = new Map();
+        // TODO: optimize this into a trie
+        this.rules = [];
+        // the rule to use automatically when recognizing or generating from this rule set
+        this.defaultRule = null;
+    }
+    /**
+     * Configure additional rules in this rule set from a route definition
+     * @returns {boolean} true if the config is terminal
+     */
+    RuleSet.prototype.config = function (config) {
+        var handler;
+        if (isPresent(config.name) && config.name[0].toUpperCase() != config.name[0]) {
+            var suggestedName = config.name[0].toUpperCase() + config.name.substring(1);
+            throw new BaseException("Route \"" + config.path + "\" with name \"" + config.name + "\" does not begin with an uppercase letter. Route names should be CamelCase like \"" + suggestedName + "\".");
+        }
+        if (config instanceof route_config_impl_1.AuxRoute) {
+            handler = new sync_route_handler_1.SyncRouteHandler(config.component, config.data);
+            var routePath_1 = this._getRoutePath(config);
+            var auxRule = new rules_1.RouteRule(routePath_1, handler);
+            this.auxRulesByPath.set(routePath_1.toString(), auxRule);
+            if (isPresent(config.name)) {
+                this.auxRulesByName.set(config.name, auxRule);
+            }
+            return auxRule.terminal;
+        }
+        var useAsDefault = false;
+        if (config instanceof route_config_impl_1.Redirect) {
+            var routePath_2 = this._getRoutePath(config);
+            var redirector = new rules_1.RedirectRule(routePath_2, config.redirectTo);
+            this._assertNoHashCollision(redirector.hash, config.path);
+            this.rules.push(redirector);
+            return true;
+        }
+        if (config instanceof route_config_impl_1.Route) {
+            handler = new sync_route_handler_1.SyncRouteHandler(config.component, config.data);
+            useAsDefault = isPresent(config.useAsDefault) && config.useAsDefault;
+        }
+        else if (config instanceof route_config_impl_1.AsyncRoute) {
+            handler = new async_route_handler_1.AsyncRouteHandler(config.loader, config.data);
+            useAsDefault = isPresent(config.useAsDefault) && config.useAsDefault;
+        }
+        var routePath = this._getRoutePath(config);
+        var newRule = new rules_1.RouteRule(routePath, handler);
+        this._assertNoHashCollision(newRule.hash, config.path);
+        if (useAsDefault) {
+            if (isPresent(this.defaultRule)) {
+                throw new BaseException("Only one route can be default");
+            }
+            this.defaultRule = newRule;
+        }
+        this.rules.push(newRule);
+        if (isPresent(config.name)) {
+            this.rulesByName.set(config.name, newRule);
+        }
+        return newRule.terminal;
+    };
+    /**
+     * Given a URL, returns a list of `RouteMatch`es, which are partial recognitions for some route.
+     */
+    RuleSet.prototype.recognize = function (urlParse) {
+        var solutions = [];
+        this.rules.forEach(function (routeRecognizer) {
+            var pathMatch = routeRecognizer.recognize(urlParse);
+            if (isPresent(pathMatch)) {
+                solutions.push(pathMatch);
+            }
+        });
+        // handle cases where we are routing just to an aux route
+        if (solutions.length == 0 && isPresent(urlParse) && urlParse.auxiliary.length > 0) {
+            return [PromiseWrapper.resolve(new rules_1.PathMatch(null, null, urlParse.auxiliary))];
+        }
+        return solutions;
+    };
+    RuleSet.prototype.recognizeAuxiliary = function (urlParse) {
+        var routeRecognizer = this.auxRulesByPath.get(urlParse.path);
+        if (isPresent(routeRecognizer)) {
+            return [routeRecognizer.recognize(urlParse)];
+        }
+        return [PromiseWrapper.resolve(null)];
+    };
+    RuleSet.prototype.hasRoute = function (name) { return this.rulesByName.has(name); };
+    RuleSet.prototype.componentLoaded = function (name) {
+        return this.hasRoute(name) && isPresent(this.rulesByName.get(name).handler.componentType);
+    };
+    RuleSet.prototype.loadComponent = function (name) {
+        return this.rulesByName.get(name).handler.resolveComponentType();
+    };
+    RuleSet.prototype.generate = function (name, params) {
+        var rule = this.rulesByName.get(name);
+        if (isBlank(rule)) {
+            return null;
+        }
+        return rule.generate(params);
+    };
+    RuleSet.prototype.generateAuxiliary = function (name, params) {
+        var rule = this.auxRulesByName.get(name);
+        if (isBlank(rule)) {
+            return null;
+        }
+        return rule.generate(params);
+    };
+    RuleSet.prototype._assertNoHashCollision = function (hash, path) {
+        this.rules.forEach(function (rule) {
+            if (hash == rule.hash) {
+                throw new BaseException("Configuration '" + path + "' conflicts with existing route '" + rule.path + "'");
+            }
+        });
+    };
+    RuleSet.prototype._getRoutePath = function (config) {
+        if (isPresent(config.regex)) {
+            if (isFunction(config.serializer)) {
+                return new regex_route_path_1.RegexRoutePath(config.regex, config.serializer);
+            }
+            else {
+                throw new BaseException("Route provides a regex property, '" + config.regex + "', but no serializer property");
+            }
+        }
+        if (isPresent(config.path)) {
+            // Auxiliary routes do not have a slash at the start
+            var path = (config instanceof route_config_impl_1.AuxRoute && config.path.startsWith('/')) ?
+                config.path.substring(1) :
+                config.path;
+            return new param_route_path_1.ParamRoutePath(path);
+        }
+        throw new BaseException('Route must provide either a path or regex property');
+    };
+    return RuleSet;
+})();
+exports.RuleSet = RuleSet;
+var MatchedUrl = (function () {
+    function MatchedUrl(urlPath, urlParams, allParams, auxiliary, rest) {
+        this.urlPath = urlPath;
+        this.urlParams = urlParams;
+        this.allParams = allParams;
+        this.auxiliary = auxiliary;
+        this.rest = rest;
+    }
+    return MatchedUrl;
+})();
+exports.MatchedUrl = MatchedUrl;
+var GeneratedUrl = (function () {
+    function GeneratedUrl(urlPath, urlParams) {
+        this.urlPath = urlPath;
+        this.urlParams = urlParams;
+    }
+    return GeneratedUrl;
+})();
+exports.GeneratedUrl = GeneratedUrl;
+var utils_1 = require('../../utils');
+var url_parser_1 = require('../../url_parser');
+var route_path_1 = require('./route_path');
+/**
+ * Identified by a `...` URL segment. This indicates that the
+ * Route will continue to be matched by child `Router`s.
+ */
+var ContinuationPathSegment = (function () {
+    function ContinuationPathSegment() {
+        this.name = '';
+        this.specificity = '';
+        this.hash = '...';
+    }
+    ContinuationPathSegment.prototype.generate = function (params) { return ''; };
+    ContinuationPathSegment.prototype.match = function (path) { return true; };
+    return ContinuationPathSegment;
+})();
+/**
+ * Identified by a string not starting with a `:` or `*`.
+ * Only matches the URL segments that equal the segment path
+ */
+var StaticPathSegment = (function () {
+    function StaticPathSegment(path) {
+        this.path = path;
+        this.name = '';
+        this.specificity = '2';
+        this.hash = path;
+    }
+    StaticPathSegment.prototype.match = function (path) { return path == this.path; };
+    StaticPathSegment.prototype.generate = function (params) { return this.path; };
+    return StaticPathSegment;
+})();
+/**
+ * Identified by a string starting with `:`. Indicates a segment
+ * that can contain a value that will be extracted and provided to
+ * a matching `Instruction`.
+ */
+var DynamicPathSegment = (function () {
+    function DynamicPathSegment(name) {
+        this.name = name;
+        this.specificity = '1';
+        this.hash = ':';
+    }
+    DynamicPathSegment.prototype.match = function (path) { return path.length > 0; };
+    DynamicPathSegment.prototype.generate = function (params) {
+        if (!StringMapWrapper.contains(params.map, this.name)) {
+            throw new BaseException("Route generator for '" + this.name + "' was not included in parameters passed.");
+        }
+        return utils_1.normalizeString(params.get(this.name));
+    };
+    DynamicPathSegment.paramMatcher = /^:([^\/]+)$/g;
+    return DynamicPathSegment;
+})();
+/**
+ * Identified by a string starting with `*` Indicates that all the following
+ * segments match this route and that the value of these segments should
+ * be provided to a matching `Instruction`.
+ */
+var StarPathSegment = (function () {
+    function StarPathSegment(name) {
+        this.name = name;
+        this.specificity = '0';
+        this.hash = '*';
+    }
+    StarPathSegment.prototype.match = function (path) { return true; };
+    StarPathSegment.prototype.generate = function (params) { return utils_1.normalizeString(params.get(this.name)); };
+    StarPathSegment.wildcardMatcher = /^\*([^\/]+)$/g;
+    return StarPathSegment;
+})();
+/**
+ * Parses a URL string using a given matcher DSL, and generates URLs from param maps
+ */
+var ParamRoutePath = (function () {
+    /**
+     * Takes a string representing the matcher DSL
+     */
+    function ParamRoutePath(routePath) {
+        this.routePath = routePath;
+        this.terminal = true;
+        this._assertValidPath(routePath);
+        this._parsePathString(routePath);
+        this.specificity = this._calculateSpecificity();
+        this.hash = this._calculateHash();
+        var lastSegment = this._segments[this._segments.length - 1];
+        this.terminal = !(lastSegment instanceof ContinuationPathSegment);
+    }
+    ParamRoutePath.prototype.matchUrl = function (url) {
+        var nextUrlSegment = url;
+        var currentUrlSegment;
+        var positionalParams = {};
+        var captured = [];
+        for (var i = 0; i < this._segments.length; i += 1) {
+            var pathSegment = this._segments[i];
+            currentUrlSegment = nextUrlSegment;
+            if (pathSegment instanceof ContinuationPathSegment) {
+                break;
+            }
+            if (isPresent(currentUrlSegment)) {
+                // the star segment consumes all of the remaining URL, including matrix params
+                if (pathSegment instanceof StarPathSegment) {
+                    positionalParams[pathSegment.name] = currentUrlSegment.toString();
+                    captured.push(currentUrlSegment.toString());
+                    nextUrlSegment = null;
+                    break;
+                }
+                captured.push(currentUrlSegment.path);
+                if (pathSegment instanceof DynamicPathSegment) {
+                    positionalParams[pathSegment.name] = currentUrlSegment.path;
+                }
+                else if (!pathSegment.match(currentUrlSegment.path)) {
+                    return null;
+                }
+                nextUrlSegment = currentUrlSegment.child;
+            }
+            else if (!pathSegment.match('')) {
+                return null;
+            }
+        }
+        if (this.terminal && isPresent(nextUrlSegment)) {
+            return null;
+        }
+        var urlPath = captured.join('/');
+        var auxiliary = [];
+        var urlParams = [];
+        var allParams = positionalParams;
+        if (isPresent(currentUrlSegment)) {
+            // If this is the root component, read query params. Otherwise, read matrix params.
+            var paramsSegment = url instanceof url_parser_1.RootUrl ? url : currentUrlSegment;
+            if (isPresent(paramsSegment.params)) {
+                allParams = StringMapWrapper.merge(paramsSegment.params, positionalParams);
+                urlParams = url_parser_1.convertUrlParamsToArray(paramsSegment.params);
+            }
+            else {
+                allParams = positionalParams;
+            }
+            auxiliary = currentUrlSegment.auxiliary;
+        }
+        return new route_path_1.MatchedUrl(urlPath, urlParams, allParams, auxiliary, nextUrlSegment);
+    };
+    ParamRoutePath.prototype.generateUrl = function (params) {
+        var paramTokens = new utils_1.TouchMap(params);
+        var path = [];
+        for (var i = 0; i < this._segments.length; i++) {
+            var segment = this._segments[i];
+            if (!(segment instanceof ContinuationPathSegment)) {
+                path.push(segment.generate(paramTokens));
+            }
+        }
+        var urlPath = path.join('/');
+        var nonPositionalParams = paramTokens.getUnused();
+        var urlParams = nonPositionalParams;
+        return new route_path_1.GeneratedUrl(urlPath, urlParams);
+    };
+    ParamRoutePath.prototype.toString = function () { return this.routePath; };
+    ParamRoutePath.prototype._parsePathString = function (routePath) {
+        // normalize route as not starting with a "/". Recognition will
+        // also normalize.
+        if (routePath.startsWith("/")) {
+            routePath = routePath.substring(1);
+        }
+        var segmentStrings = routePath.split('/');
+        this._segments = [];
+        var limit = segmentStrings.length - 1;
+        for (var i = 0; i <= limit; i++) {
+            var segment = segmentStrings[i], match;
+            if (isPresent(match = RegExpWrapper.firstMatch(DynamicPathSegment.paramMatcher, segment))) {
+                this._segments.push(new DynamicPathSegment(match[1]));
+            }
+            else if (isPresent(match = RegExpWrapper.firstMatch(StarPathSegment.wildcardMatcher, segment))) {
+                this._segments.push(new StarPathSegment(match[1]));
+            }
+            else if (segment == '...') {
+                if (i < limit) {
+                    throw new BaseException("Unexpected \"...\" before the end of the path for \"" + routePath + "\".");
+                }
+                this._segments.push(new ContinuationPathSegment());
+            }
+            else {
+                this._segments.push(new StaticPathSegment(segment));
+            }
+        }
+    };
+    ParamRoutePath.prototype._calculateSpecificity = function () {
+        // The "specificity" of a path is used to determine which route is used when multiple routes
+        // match
+        // a URL. Static segments (like "/foo") are the most specific, followed by dynamic segments
+        // (like
+        // "/:id"). Star segments add no specificity. Segments at the start of the path are more
+        // specific
+        // than proceeding ones.
+        //
+        // The code below uses place values to combine the different types of segments into a single
+        // string that we can sort later. Each static segment is marked as a specificity of "2," each
+        // dynamic segment is worth "1" specificity, and stars are worth "0" specificity.
+        var i, length = this._segments.length, specificity;
+        if (length == 0) {
+            // a single slash (or "empty segment" is as specific as a static segment
+            specificity += '2';
+        }
+        else {
+            specificity = '';
+            for (i = 0; i < length; i++) {
+                specificity += this._segments[i].specificity;
+            }
+        }
+        return specificity;
+    };
+    ParamRoutePath.prototype._calculateHash = function () {
+        // this function is used to determine whether a route config path like `/foo/:id` collides with
+        // `/foo/:name`
+        var i, length = this._segments.length;
+        var hashParts = [];
+        for (i = 0; i < length; i++) {
+            hashParts.push(this._segments[i].hash);
+        }
+        return hashParts.join('/');
+    };
+    ParamRoutePath.prototype._assertValidPath = function (path) {
+        if (StringWrapper.contains(path, '#')) {
+            throw new BaseException("Path \"" + path + "\" should not include \"#\". Use \"HashLocationStrategy\" instead.");
+        }
+        var illegalCharacter = RegExpWrapper.firstMatch(ParamRoutePath.RESERVED_CHARS, path);
+        if (isPresent(illegalCharacter)) {
+            throw new BaseException("Path \"" + path + "\" contains \"" + illegalCharacter[0] + "\" which is not allowed in a route config.");
+        }
+    };
+    ParamRoutePath.RESERVED_CHARS = RegExpWrapper.create('//|\\(|\\)|;|\\?|=');
+    return ParamRoutePath;
+})();
+exports.ParamRoutePath = ParamRoutePath;
+var route_path_1 = require('./route_path');
+var RegexRoutePath = (function () {
+    function RegexRoutePath(_reString, _serializer) {
+        this._reString = _reString;
+        this._serializer = _serializer;
+        this.terminal = true;
+        this.specificity = '2';
+        this.hash = this._reString;
+        this._regex = RegExpWrapper.create(this._reString);
+    }
+    RegexRoutePath.prototype.matchUrl = function (url) {
+        var urlPath = url.toString();
+        var params = {};
+        var matcher = RegExpWrapper.matcher(this._regex, urlPath);
+        var match = RegExpMatcherWrapper.next(matcher);
+        if (isBlank(match)) {
+            return null;
+        }
+        for (var i = 0; i < match.length; i += 1) {
+            params[i.toString()] = match[i];
+        }
+        return new route_path_1.MatchedUrl(urlPath, [], params, [], null);
+    };
+    RegexRoutePath.prototype.generateUrl = function (params) { return this._serializer(params); };
+    RegexRoutePath.prototype.toString = function () { return this._reString; };
+    return RegexRoutePath;
+})();
+exports.RegexRoutePath = RegexRoutePath;
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+};
+/**
+ * `RouteParams` is an immutable map of parameters for the given route
+ * based on the url matcher and optional parameters for that route.
+ *
+ * You can inject `RouteParams` into the constructor of a component to use it.
+ *
+ * ### Example
+ *
+ * ```
+ * import {Component} from 'angular2/core';
+ * import {bootstrap} from 'angular2/platform/browser';
+ * import {Router, ROUTER_DIRECTIVES, ROUTER_PROVIDERS, RouteConfig, RouteParams} from
+ * 'angular2/router';
+ *
+ * @Component({directives: [ROUTER_DIRECTIVES]})
+ * @RouteConfig([
+ *  {path: '/user/:id', component: UserCmp, name: 'UserCmp'},
+ * ])
+ * class AppCmp {}
+ *
+ * @Component({ template: 'user: {{id}}' })
+ * class UserCmp {
+ *   id: string;
+ *   constructor(params: RouteParams) {
+ *     this.id = params.get('id');
+ *   }
+ * }
+ *
+ * bootstrap(AppCmp, ROUTER_PROVIDERS);
+ * ```
+ */
+var RouteParams = (function () {
+    function RouteParams(params) {
+        this.params = params;
+    }
+    RouteParams.prototype.get = function (param) { return normalizeBlank(StringMapWrapper.get(this.params, param)); };
+    return RouteParams;
+})();
+exports.RouteParams = RouteParams;
+/**
+ * `RouteData` is an immutable map of additional data you can configure in your {@link Route}.
+ *
+ * You can inject `RouteData` into the constructor of a component to use it.
+ *
+ * ### Example
+ *
+ * ```
+ * import {Component} from 'angular2/core';
+ * import {bootstrap} from 'angular2/platform/browser';
+ * import {Router, ROUTER_DIRECTIVES, ROUTER_PROVIDERS, RouteConfig, RouteData} from
+ * 'angular2/router';
+ *
+ * @Component({directives: [ROUTER_DIRECTIVES]})
+ * @RouteConfig([
+ *  {path: '/user/:id', component: UserCmp, name: 'UserCmp', data: {isAdmin: true}},
+ * ])
+ * class AppCmp {}
+ *
+ * @Component({...})
+ * @View({ template: 'user: {{isAdmin}}' })
+ * class UserCmp {
+ *   string: isAdmin;
+ *   constructor(data: RouteData) {
+ *     this.isAdmin = data.get('isAdmin');
+ *   }
+ * }
+ *
+ * bootstrap(AppCmp, ROUTER_PROVIDERS);
+ * ```
+ */
+var RouteData = (function () {
+    function RouteData(data) {
+        if (data === void 0) { data = CONST_EXPR({}); }
+        this.data = data;
+    }
+    RouteData.prototype.get = function (key) { return normalizeBlank(StringMapWrapper.get(this.data, key)); };
+    return RouteData;
+})();
+exports.RouteData = RouteData;
+exports.BLANK_ROUTE_DATA = new RouteData();
+/**
+ * `Instruction` is a tree of {@link ComponentInstruction}s with all the information needed
+ * to transition each component in the app to a given route, including all auxiliary routes.
+ *
+ * `Instruction`s can be created using {@link Router#generate}, and can be used to
+ * perform route changes with {@link Router#navigateByInstruction}.
+ *
+ * ### Example
+ *
+ * ```
+ * import {Component} from 'angular2/core';
+ * import {bootstrap} from 'angular2/platform/browser';
+ * import {Router, ROUTER_DIRECTIVES, ROUTER_PROVIDERS, RouteConfig} from 'angular2/router';
+ *
+ * @Component({directives: [ROUTER_DIRECTIVES]})
+ * @RouteConfig([
+ *  {...},
+ * ])
+ * class AppCmp {
+ *   constructor(router: Router) {
+ *     var instruction = router.generate(['/MyRoute']);
+ *     router.navigateByInstruction(instruction);
+ *   }
+ * }
+ *
+ * bootstrap(AppCmp, ROUTER_PROVIDERS);
+ * ```
+ */
+var Instruction = (function () {
+    function Instruction(component, child, auxInstruction) {
+        this.component = component;
+        this.child = child;
+        this.auxInstruction = auxInstruction;
+    }
+    Object.defineProperty(Instruction.prototype, "urlPath", {
+        get: function () { return isPresent(this.component) ? this.component.urlPath : ''; },
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(Instruction.prototype, "urlParams", {
+        get: function () { return isPresent(this.component) ? this.component.urlParams : []; },
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(Instruction.prototype, "specificity", {
+        get: function () {
+            var total = '';
+            if (isPresent(this.component)) {
+                total += this.component.specificity;
+            }
+            if (isPresent(this.child)) {
+                total += this.child.specificity;
+            }
+            return total;
+        },
+        enumerable: true,
+        configurable: true
+    });
+    /**
+     * converts the instruction into a URL string
+     */
+    Instruction.prototype.toRootUrl = function () { return this.toUrlPath() + this.toUrlQuery(); };
+    /** @internal */
+    Instruction.prototype._toNonRootUrl = function () {
+        return this._stringifyPathMatrixAuxPrefixed() +
+            (isPresent(this.child) ? this.child._toNonRootUrl() : '');
+    };
+    Instruction.prototype.toUrlQuery = function () { return this.urlParams.length > 0 ? ('?' + this.urlParams.join('&')) : ''; };
+    /**
+     * Returns a new instruction that shares the state of the existing instruction, but with
+     * the given child {@link Instruction} replacing the existing child.
+     */
+    Instruction.prototype.replaceChild = function (child) {
+        return new ResolvedInstruction(this.component, child, this.auxInstruction);
+    };
+    /**
+     * If the final URL for the instruction is ``
+     */
+    Instruction.prototype.toUrlPath = function () {
+        return this.urlPath + this._stringifyAux() +
+            (isPresent(this.child) ? this.child._toNonRootUrl() : '');
+    };
+    // default instructions override these
+    Instruction.prototype.toLinkUrl = function () {
+        return this.urlPath + this._stringifyAux() +
+            (isPresent(this.child) ? this.child._toLinkUrl() : '');
+    };
+    // this is the non-root version (called recursively)
+    /** @internal */
+    Instruction.prototype._toLinkUrl = function () {
+        return this._stringifyPathMatrixAuxPrefixed() +
+            (isPresent(this.child) ? this.child._toLinkUrl() : '');
+    };
+    /** @internal */
+    Instruction.prototype._stringifyPathMatrixAuxPrefixed = function () {
+        var primary = this._stringifyPathMatrixAux();
+        if (primary.length > 0) {
+            primary = '/' + primary;
+        }
+        return primary;
+    };
+    /** @internal */
+    Instruction.prototype._stringifyMatrixParams = function () {
+        return this.urlParams.length > 0 ? (';' + this.urlParams.join(';')) : '';
+    };
+    /** @internal */
+    Instruction.prototype._stringifyPathMatrixAux = function () {
+        if (isBlank(this.component)) {
+            return '';
+        }
+        return this.urlPath + this._stringifyMatrixParams() + this._stringifyAux();
+    };
+    /** @internal */
+    Instruction.prototype._stringifyAux = function () {
+        var routes = [];
+        StringMapWrapper.forEach(this.auxInstruction, function (auxInstruction, _) {
+            routes.push(auxInstruction._stringifyPathMatrixAux());
+        });
+        if (routes.length > 0) {
+            return '(' + routes.join('//') + ')';
+        }
+        return '';
+    };
+    return Instruction;
+})();
+exports.Instruction = Instruction;
+/**
+ * a resolved instruction has an outlet instruction for itself, but maybe not for...
+ */
+var ResolvedInstruction = (function (_super) {
+    __extends(ResolvedInstruction, _super);
+    function ResolvedInstruction(component, child, auxInstruction) {
+        _super.call(this, component, child, auxInstruction);
+    }
+    ResolvedInstruction.prototype.resolveComponent = function () {
+        return PromiseWrapper.resolve(this.component);
+    };
+    return ResolvedInstruction;
+})(Instruction);
+exports.ResolvedInstruction = ResolvedInstruction;
+/**
+ * Represents a resolved default route
+ */
+var DefaultInstruction = (function (_super) {
+    __extends(DefaultInstruction, _super);
+    function DefaultInstruction(component, child) {
+        _super.call(this, component, child, {});
+    }
+    DefaultInstruction.prototype.toLinkUrl = function () { return ''; };
+    /** @internal */
+    DefaultInstruction.prototype._toLinkUrl = function () { return ''; };
+    return DefaultInstruction;
+})(ResolvedInstruction);
+exports.DefaultInstruction = DefaultInstruction;
+/**
+ * Represents a component that may need to do some redirection or lazy loading at a later time.
+ */
+var UnresolvedInstruction = (function (_super) {
+    __extends(UnresolvedInstruction, _super);
+    function UnresolvedInstruction(_resolver, _urlPath, _urlParams) {
+        if (_urlPath === void 0) { _urlPath = ''; }
+        if (_urlParams === void 0) { _urlParams = CONST_EXPR([]); }
+        _super.call(this, null, null, {});
+        this._resolver = _resolver;
+        this._urlPath = _urlPath;
+        this._urlParams = _urlParams;
+    }
+    Object.defineProperty(UnresolvedInstruction.prototype, "urlPath", {
+        get: function () {
+            if (isPresent(this.component)) {
+                return this.component.urlPath;
+            }
+            if (isPresent(this._urlPath)) {
+                return this._urlPath;
+            }
+            return '';
+        },
+        enumerable: true,
+        configurable: true
+    });
+    Object.defineProperty(UnresolvedInstruction.prototype, "urlParams", {
+        get: function () {
+            if (isPresent(this.component)) {
+                return this.component.urlParams;
+            }
+            if (isPresent(this._urlParams)) {
+                return this._urlParams;
+            }
+            return [];
+        },
+        enumerable: true,
+        configurable: true
+    });
+    UnresolvedInstruction.prototype.resolveComponent = function () {
+        var _this = this;
+        if (isPresent(this.component)) {
+            return PromiseWrapper.resolve(this.component);
+        }
+        return this._resolver().then(function (resolution) {
+            _this.child = resolution.child;
+            return _this.component = resolution.component;
+        });
+    };
+    return UnresolvedInstruction;
+})(Instruction);
+exports.UnresolvedInstruction = UnresolvedInstruction;
+var RedirectInstruction = (function (_super) {
+    __extends(RedirectInstruction, _super);
+    function RedirectInstruction(component, child, auxInstruction, _specificity) {
+        _super.call(this, component, child, auxInstruction);
+        this._specificity = _specificity;
+    }
+    Object.defineProperty(RedirectInstruction.prototype, "specificity", {
+        get: function () { return this._specificity; },
+        enumerable: true,
+        configurable: true
+    });
+    return RedirectInstruction;
+})(ResolvedInstruction);
+exports.RedirectInstruction = RedirectInstruction;
+/**
+ * A `ComponentInstruction` represents the route state for a single component.
+ *
+ * `ComponentInstructions` is a public API. Instances of `ComponentInstruction` are passed
+ * to route lifecycle hooks, like {@link CanActivate}.
+ *
+ * `ComponentInstruction`s are [hash consed](https://en.wikipedia.org/wiki/Hash_consing). You should
+ * never construct one yourself with "new." Instead, rely on {@link Router/RouteRecognizer} to
+ * construct `ComponentInstruction`s.
+ *
+ * You should not modify this object. It should be treated as immutable.
+ */
+var ComponentInstruction = (function () {
+    /**
+     * @internal
+     */
+    function ComponentInstruction(urlPath, urlParams, data, componentType, terminal, specificity, params) {
+        if (params === void 0) { params = null; }
+        this.urlPath = urlPath;
+        this.urlParams = urlParams;
+        this.componentType = componentType;
+        this.terminal = terminal;
+        this.specificity = specificity;
+        this.params = params;
+        this.reuse = false;
+        this.routeData = isPresent(data) ? data : exports.BLANK_ROUTE_DATA;
+    }
+    return ComponentInstruction;
+})();
+exports.ComponentInstruction = ComponentInstruction;
+var core_1 = require('angular2/core');
+var route_config_impl_1 = require('./route_config/route_config_impl');
+var rules_1 = require('./rules/rules');
+var rule_set_1 = require('./rules/rule_set');
+var instruction_1 = require('./instruction');
+var route_config_normalizer_1 = require('./route_config/route_config_normalizer');
+var url_parser_1 = require('./url_parser');
+var _resolveToNull = PromiseWrapper.resolve(null);
+// A LinkItemArray is an array, which describes a set of routes
+// The items in the array are found in groups:
+// - the first item is the name of the route
+// - the next items are:
+//   - an object containing parameters
+//   - or an array describing an aux route
+// export type LinkRouteItem = string | Object;
+// export type LinkItem = LinkRouteItem | Array<LinkRouteItem>;
+// export type LinkItemArray = Array<LinkItem>;
+/**
+ * Token used to bind the component with the top-level {@link RouteConfig}s for the
+ * application.
+ *
+ * ### Example ([live demo](http://plnkr.co/edit/iRUP8B5OUbxCWQ3AcIDm))
+ *
+ * ```
+ * import {Component} from 'angular2/core';
+ * import {
+ *   ROUTER_DIRECTIVES,
+ *   ROUTER_PROVIDERS,
+ *   RouteConfig
+ * } from 'angular2/router';
+ *
+ * @Component({directives: [ROUTER_DIRECTIVES]})
+ * @RouteConfig([
+ *  {...},
+ * ])
+ * class AppCmp {
+ *   // ...
+ * }
+ *
+ * bootstrap(AppCmp, [ROUTER_PROVIDERS]);
+ * ```
+ */
+exports.ROUTER_PRIMARY_COMPONENT = CONST_EXPR(new core_1.OpaqueToken('RouterPrimaryComponent'));
+/**
+ * The RouteRegistry holds route configurations for each component in an Angular app.
+ * It is responsible for creating Instructions from URLs, and generating URLs based on route and
+ * parameters.
+ */
+var RouteRegistry = (function () {
+    function RouteRegistry(_rootComponent) {
+        this._rootComponent = _rootComponent;
+        this._rules = new Map();
+    }
+    /**
+     * Given a component and a configuration object, add the route to this registry
+     */
+    RouteRegistry.prototype.config = function (parentComponent, config) {
+        config = route_config_normalizer_1.normalizeRouteConfig(config, this);
+        // this is here because Dart type guard reasons
+        if (config instanceof route_config_impl_1.Route) {
+            route_config_normalizer_1.assertComponentExists(config.component, config.path);
+        }
+        else if (config instanceof route_config_impl_1.AuxRoute) {
+            route_config_normalizer_1.assertComponentExists(config.component, config.path);
+        }
+        var rules = this._rules.get(parentComponent);
+        if (isBlank(rules)) {
+            rules = new rule_set_1.RuleSet();
+            this._rules.set(parentComponent, rules);
+        }
+        var terminal = rules.config(config);
+        if (config instanceof route_config_impl_1.Route) {
+            if (terminal) {
+                assertTerminalComponent(config.component, config.path);
+            }
+            else {
+                this.configFromComponent(config.component);
+            }
+        }
+    };
+    /**
+     * Reads the annotations of a component and configures the registry based on them
+     */
+    RouteRegistry.prototype.configFromComponent = function (component) {
+        var _this = this;
+        if (!isType(component)) {
+            return;
+        }
+        // Don't read the annotations from a type more than once –
+        // this prevents an infinite loop if a component routes recursively.
+        if (this._rules.has(component)) {
+            return;
+        }
+        var annotations = reflector.annotations(component);
+        if (isPresent(annotations)) {
+            for (var i = 0; i < annotations.length; i++) {
+                var annotation = annotations[i];
+                if (annotation instanceof route_config_impl_1.RouteConfig) {
+                    var routeCfgs = annotation.configs;
+                    routeCfgs.forEach(function (config) { return _this.config(component, config); });
+                }
+            }
+        }
+    };
+    /**
+     * Given a URL and a parent component, return the most specific instruction for navigating
+     * the application into the state specified by the url
+     */
+    RouteRegistry.prototype.recognize = function (url, ancestorInstructions) {
+        var parsedUrl = url_parser_1.parser.parse(url);
+        return this._recognize(parsedUrl, []);
+    };
+    /**
+     * Recognizes all parent-child routes, but creates unresolved auxiliary routes
+     */
+    RouteRegistry.prototype._recognize = function (parsedUrl, ancestorInstructions, _aux) {
+        var _this = this;
+        if (_aux === void 0) { _aux = false; }
+        var parentInstruction = ListWrapper.last(ancestorInstructions);
+        var parentComponent = isPresent(parentInstruction) ? parentInstruction.component.componentType :
+            this._rootComponent;
+        var rules = this._rules.get(parentComponent);
+        if (isBlank(rules)) {
+            return _resolveToNull;
+        }
+        // Matches some beginning part of the given URL
+        var possibleMatches = _aux ? rules.recognizeAuxiliary(parsedUrl) : rules.recognize(parsedUrl);
+        var matchPromises = possibleMatches.map(function (candidate) { return candidate.then(function (candidate) {
+            if (candidate instanceof rules_1.PathMatch) {
+                var auxParentInstructions = ancestorInstructions.length > 0 ? [ListWrapper.last(ancestorInstructions)] : [];
+                var auxInstructions = _this._auxRoutesToUnresolved(candidate.remainingAux, auxParentInstructions);
+                var instruction = new instruction_1.ResolvedInstruction(candidate.instruction, null, auxInstructions);
+                if (isBlank(candidate.instruction) || candidate.instruction.terminal) {
+                    return instruction;
+                }
+                var newAncestorInstructions = ancestorInstructions.concat([instruction]);
+                return _this._recognize(candidate.remaining, newAncestorInstructions)
+                    .then(function (childInstruction) {
+                    if (isBlank(childInstruction)) {
+                        return null;
+                    }
+                    // redirect instructions are already absolute
+                    if (childInstruction instanceof instruction_1.RedirectInstruction) {
+                        return childInstruction;
+                    }
+                    instruction.child = childInstruction;
+                    return instruction;
+                });
+            }
+            if (candidate instanceof rules_1.RedirectMatch) {
+                var instruction = _this.generate(candidate.redirectTo, ancestorInstructions.concat([null]));
+                return new instruction_1.RedirectInstruction(instruction.component, instruction.child, instruction.auxInstruction, candidate.specificity);
+            }
+        }); });
+        if ((isBlank(parsedUrl) || parsedUrl.path == '') && possibleMatches.length == 0) {
+            return PromiseWrapper.resolve(this.generateDefault(parentComponent));
+        }
+        return PromiseWrapper.all(matchPromises).then(mostSpecific);
+    };
+    RouteRegistry.prototype._auxRoutesToUnresolved = function (auxRoutes, parentInstructions) {
+        var _this = this;
+        var unresolvedAuxInstructions = {};
+        auxRoutes.forEach(function (auxUrl) {
+            unresolvedAuxInstructions[auxUrl.path] = new instruction_1.UnresolvedInstruction(function () { return _this._recognize(auxUrl, parentInstructions, true); });
+        });
+        return unresolvedAuxInstructions;
+    };
+    /**
+     * Given a normalized list with component names and params like: `['user', {id: 3 }]`
+     * generates a url with a leading slash relative to the provided `parentComponent`.
+     *
+     * If the optional param `_aux` is `true`, then we generate starting at an auxiliary
+     * route boundary.
+     */
+    RouteRegistry.prototype.generate = function (linkParams, ancestorInstructions, _aux) {
+        if (_aux === void 0) { _aux = false; }
+        var params = splitAndFlattenLinkParams(linkParams);
+        var prevInstruction;
+        // The first segment should be either '.' (generate from parent) or '' (generate from root).
+        // When we normalize above, we strip all the slashes, './' becomes '.' and '/' becomes ''.
+        if (ListWrapper.first(params) == '') {
+            params.shift();
+            prevInstruction = ListWrapper.first(ancestorInstructions);
+            ancestorInstructions = [];
+        }
+        else {
+            prevInstruction = ancestorInstructions.length > 0 ? ancestorInstructions.pop() : null;
+            if (ListWrapper.first(params) == '.') {
+                params.shift();
+            }
+            else if (ListWrapper.first(params) == '..') {
+                while (ListWrapper.first(params) == '..') {
+                    if (ancestorInstructions.length <= 0) {
+                        throw new BaseException("Link \"" + ListWrapper.toJSON(linkParams) + "\" has too many \"../\" segments.");
+                    }
+                    prevInstruction = ancestorInstructions.pop();
+                    params = ListWrapper.slice(params, 1);
+                }
+            }
+            else {
+                // we must only peak at the link param, and not consume it
+                var routeName = ListWrapper.first(params);
+                var parentComponentType = this._rootComponent;
+                var grandparentComponentType = null;
+                if (ancestorInstructions.length > 1) {
+                    var parentComponentInstruction = ancestorInstructions[ancestorInstructions.length - 1];
+                    var grandComponentInstruction = ancestorInstructions[ancestorInstructions.length - 2];
+                    parentComponentType = parentComponentInstruction.component.componentType;
+                    grandparentComponentType = grandComponentInstruction.component.componentType;
+                }
+                else if (ancestorInstructions.length == 1) {
+                    parentComponentType = ancestorInstructions[0].component.componentType;
+                    grandparentComponentType = this._rootComponent;
+                }
+                // For a link with no leading `./`, `/`, or `../`, we look for a sibling and child.
+                // If both exist, we throw. Otherwise, we prefer whichever exists.
+                var childRouteExists = this.hasRoute(routeName, parentComponentType);
+                var parentRouteExists = isPresent(grandparentComponentType) &&
+                    this.hasRoute(routeName, grandparentComponentType);
+                if (parentRouteExists && childRouteExists) {
+                    var msg = "Link \"" + ListWrapper.toJSON(linkParams) + "\" is ambiguous, use \"./\" or \"../\" to disambiguate.";
+                    throw new BaseException(msg);
+                }
+                if (parentRouteExists) {
+                    prevInstruction = ancestorInstructions.pop();
+                }
+            }
+        }
+        if (params[params.length - 1] == '') {
+            params.pop();
+        }
+        if (params.length > 0 && params[0] == '') {
+            params.shift();
+        }
+        if (params.length < 1) {
+            var msg = "Link \"" + ListWrapper.toJSON(linkParams) + "\" must include a route name.";
+            throw new BaseException(msg);
+        }
+        var generatedInstruction = this._generate(params, ancestorInstructions, prevInstruction, _aux, linkParams);
+        // we don't clone the first (root) element
+        for (var i = ancestorInstructions.length - 1; i >= 0; i--) {
+            var ancestorInstruction = ancestorInstructions[i];
+            if (isBlank(ancestorInstruction)) {
+                break;
+            }
+            generatedInstruction = ancestorInstruction.replaceChild(generatedInstruction);
+        }
+        return generatedInstruction;
+    };
+    /*
+     * Internal helper that does not make any assertions about the beginning of the link DSL.
+     * `ancestorInstructions` are parents that will be cloned.
+     * `prevInstruction` is the existing instruction that would be replaced, but which might have
+     * aux routes that need to be cloned.
+     */
+    RouteRegistry.prototype._generate = function (linkParams, ancestorInstructions, prevInstruction, _aux, _originalLink) {
+        var _this = this;
+        if (_aux === void 0) { _aux = false; }
+        var parentComponentType = this._rootComponent;
+        var componentInstruction = null;
+        var auxInstructions = {};
+        var parentInstruction = ListWrapper.last(ancestorInstructions);
+        if (isPresent(parentInstruction) && isPresent(parentInstruction.component)) {
+            parentComponentType = parentInstruction.component.componentType;
+        }
+        if (linkParams.length == 0) {
+            var defaultInstruction = this.generateDefault(parentComponentType);
+            if (isBlank(defaultInstruction)) {
+                throw new BaseException("Link \"" + ListWrapper.toJSON(_originalLink) + "\" does not resolve to a terminal instruction.");
+            }
+            return defaultInstruction;
+        }
+        // for non-aux routes, we want to reuse the predecessor's existing primary and aux routes
+        // and only override routes for which the given link DSL provides
+        if (isPresent(prevInstruction) && !_aux) {
+            auxInstructions = StringMapWrapper.merge(prevInstruction.auxInstruction, auxInstructions);
+            componentInstruction = prevInstruction.component;
+        }
+        var rules = this._rules.get(parentComponentType);
+        if (isBlank(rules)) {
+            throw new BaseException("Component \"" + getTypeNameForDebugging(parentComponentType) + "\" has no route config.");
+        }
+        var linkParamIndex = 0;
+        var routeParams = {};
+        // first, recognize the primary route if one is provided
+        if (linkParamIndex < linkParams.length && isString(linkParams[linkParamIndex])) {
+            var routeName = linkParams[linkParamIndex];
+            if (routeName == '' || routeName == '.' || routeName == '..') {
+                throw new BaseException("\"" + routeName + "/\" is only allowed at the beginning of a link DSL.");
+            }
+            linkParamIndex += 1;
+            if (linkParamIndex < linkParams.length) {
+                var linkParam = linkParams[linkParamIndex];
+                if (isStringMap(linkParam) && !isArray(linkParam)) {
+                    routeParams = linkParam;
+                    linkParamIndex += 1;
+                }
+            }
+            var routeRecognizer = (_aux ? rules.auxRulesByName : rules.rulesByName).get(routeName);
+            if (isBlank(routeRecognizer)) {
+                throw new BaseException("Component \"" + getTypeNameForDebugging(parentComponentType) + "\" has no route named \"" + routeName + "\".");
+            }
+            // Create an "unresolved instruction" for async routes
+            // we'll figure out the rest of the route when we resolve the instruction and
+            // perform a navigation
+            if (isBlank(routeRecognizer.handler.componentType)) {
+                var generatedUrl = routeRecognizer.generateComponentPathValues(routeParams);
+                return new instruction_1.UnresolvedInstruction(function () {
+                    return routeRecognizer.handler.resolveComponentType().then(function (_) {
+                        return _this._generate(linkParams, ancestorInstructions, prevInstruction, _aux, _originalLink);
+                    });
+                }, generatedUrl.urlPath, url_parser_1.convertUrlParamsToArray(generatedUrl.urlParams));
+            }
+            componentInstruction = _aux ? rules.generateAuxiliary(routeName, routeParams) :
+                rules.generate(routeName, routeParams);
+        }
+        // Next, recognize auxiliary instructions.
+        // If we have an ancestor instruction, we preserve whatever aux routes are active from it.
+        while (linkParamIndex < linkParams.length && isArray(linkParams[linkParamIndex])) {
+            var auxParentInstruction = [parentInstruction];
+            var auxInstruction = this._generate(linkParams[linkParamIndex], auxParentInstruction, null, true, _originalLink);
+            // TODO: this will not work for aux routes with parameters or multiple segments
+            auxInstructions[auxInstruction.component.urlPath] = auxInstruction;
+            linkParamIndex += 1;
+        }
+        var instruction = new instruction_1.ResolvedInstruction(componentInstruction, null, auxInstructions);
+        // If the component is sync, we can generate resolved child route instructions
+        // If not, we'll resolve the instructions at navigation time
+        if (isPresent(componentInstruction) && isPresent(componentInstruction.componentType)) {
+            var childInstruction = null;
+            if (componentInstruction.terminal) {
+                if (linkParamIndex >= linkParams.length) {
+                }
+            }
+            else {
+                var childAncestorComponents = ancestorInstructions.concat([instruction]);
+                var remainingLinkParams = linkParams.slice(linkParamIndex);
+                childInstruction = this._generate(remainingLinkParams, childAncestorComponents, null, false, _originalLink);
+            }
+            instruction.child = childInstruction;
+        }
+        return instruction;
+    };
+    RouteRegistry.prototype.hasRoute = function (name, parentComponent) {
+        var rules = this._rules.get(parentComponent);
+        if (isBlank(rules)) {
+            return false;
+        }
+        return rules.hasRoute(name);
+    };
+    RouteRegistry.prototype.generateDefault = function (componentCursor) {
+        var _this = this;
+        if (isBlank(componentCursor)) {
+            return null;
+        }
+        var rules = this._rules.get(componentCursor);
+        if (isBlank(rules) || isBlank(rules.defaultRule)) {
+            return null;
+        }
+        var defaultChild = null;
+        if (isPresent(rules.defaultRule.handler.componentType)) {
+            var componentInstruction = rules.defaultRule.generate({});
+            if (!rules.defaultRule.terminal) {
+                defaultChild = this.generateDefault(rules.defaultRule.handler.componentType);
+            }
+            return new instruction_1.DefaultInstruction(componentInstruction, defaultChild);
+        }
+        return new instruction_1.UnresolvedInstruction(function () {
+            return rules.defaultRule.handler.resolveComponentType().then(function (_) { return _this.generateDefault(componentCursor); });
+        });
+    };
+    return RouteRegistry;
+})();
+exports.RouteRegistry = RouteRegistry;
+/*
+ * Given: ['/a/b', {c: 2}]
+ * Returns: ['', 'a', 'b', {c: 2}]
+ */
+function splitAndFlattenLinkParams(linkParams) {
+    var accumulation = [];
+    linkParams.forEach(function (item) {
+        if (isString(item)) {
+            var strItem = item;
+            accumulation = accumulation.concat(strItem.split('/'));
+        }
+        else {
+            accumulation.push(item);
+        }
+    });
+    return accumulation;
+}
+/*
+ * Given a list of instructions, returns the most specific instruction
+ */
+function mostSpecific(instructions) {
+    instructions = instructions.filter(function (instruction) { return isPresent(instruction); });
+    if (instructions.length == 0) {
+        return null;
+    }
+    if (instructions.length == 1) {
+        return instructions[0];
+    }
+    var first = instructions[0];
+    var rest = instructions.slice(1);
+    return rest.reduce(function (instruction, contender) {
+        if (compareSpecificityStrings(contender.specificity, instruction.specificity) == -1) {
+            return contender;
+        }
+        return instruction;
+    }, first);
+}
+/*
+ * Expects strings to be in the form of "[0-2]+"
+ * Returns -1 if string A should be sorted above string B, 1 if it should be sorted after,
+ * or 0 if they are the same.
+ */
+function compareSpecificityStrings(a, b) {
+    var l = Math.min(a.length, b.length);
+    for (var i = 0; i < l; i += 1) {
+        var ai = StringWrapper.charCodeAt(a, i);
+        var bi = StringWrapper.charCodeAt(b, i);
+        var difference = bi - ai;
+        if (difference != 0) {
+            return difference;
+        }
+    }
+    return a.length - b.length;
+}
+function assertTerminalComponent(component, path) {
+    if (!isType(component)) {
+        return;
+    }
+    var annotations = reflector.annotations(component);
+    if (isPresent(annotations)) {
+        for (var i = 0; i < annotations.length; i++) {
+            var annotation = annotations[i];
+            if (annotation instanceof route_config_impl_1.RouteConfig) {
+                throw new BaseException("Child routes are not allowed for \"" + path + "\". Use \"...\" on the parent's route path.");
+            }
+        }
+    }
+}
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+};
+var route_lifecycle_reflector_1 = require('./lifecycle/route_lifecycle_reflector');
+var _resolveToTrue = PromiseWrapper.resolve(true);
+var _resolveToFalse = PromiseWrapper.resolve(false);
+/**
+ * The `Router` is responsible for mapping URLs to components.
+ *
+ * You can see the state of the router by inspecting the read-only field `router.navigating`.
+ * This may be useful for showing a spinner, for instance.
+ *
+ * ## Concepts
+ *
+ * Routers and component instances have a 1:1 correspondence.
+ *
+ * The router holds reference to a number of {@link RouterOutlet}.
+ * An outlet is a placeholder that the router dynamically fills in depending on the current URL.
+ *
+ * When the router navigates from a URL, it must first recognize it and serialize it into an
+ * `Instruction`.
+ * The router uses the `RouteRegistry` to get an `Instruction`.
+ */
+var Router = (function () {
+    function Router(registry, parent, hostComponent) {
+        this.registry = registry;
+        this.parent = parent;
+        this.hostComponent = hostComponent;
+        this.navigating = false;
+        this._currentInstruction = null;
+        this._currentNavigation = _resolveToTrue;
+        this._outlet = null;
+        this._auxRouters = new Map();
+        this._subject = new EventEmitter();
+    }
+    /**
+     * Constructs a child router. You probably don't need to use this unless you're writing a reusable
+     * component.
+     */
+    Router.prototype.childRouter = function (hostComponent) {
+        return this._childRouter = new ChildRouter(this, hostComponent);
+    };
+    /**
+     * Constructs a child router. You probably don't need to use this unless you're writing a reusable
+     * component.
+     */
+    Router.prototype.auxRouter = function (hostComponent) { return new ChildRouter(this, hostComponent); };
+    /**
+     * Register an outlet to be notified of primary route changes.
+     *
+     * You probably don't need to use this unless you're writing a reusable component.
+     */
+    Router.prototype.registerPrimaryOutlet = function (outlet) {
+        if (isPresent(outlet.name)) {
+            throw new BaseException("registerPrimaryOutlet expects to be called with an unnamed outlet.");
+        }
+        if (isPresent(this._outlet)) {
+            throw new BaseException("Primary outlet is already registered.");
+        }
+        this._outlet = outlet;
+        if (isPresent(this._currentInstruction)) {
+            return this.commit(this._currentInstruction, false);
+        }
+        return _resolveToTrue;
+    };
+    /**
+     * Unregister an outlet (because it was destroyed, etc).
+     *
+     * You probably don't need to use this unless you're writing a custom outlet implementation.
+     */
+    Router.prototype.unregisterPrimaryOutlet = function (outlet) {
+        if (isPresent(outlet.name)) {
+            throw new BaseException("registerPrimaryOutlet expects to be called with an unnamed outlet.");
+        }
+        this._outlet = null;
+    };
+    /**
+     * Register an outlet to notified of auxiliary route changes.
+     *
+     * You probably don't need to use this unless you're writing a reusable component.
+     */
+    Router.prototype.registerAuxOutlet = function (outlet) {
+        var outletName = outlet.name;
+        if (isBlank(outletName)) {
+            throw new BaseException("registerAuxOutlet expects to be called with an outlet with a name.");
+        }
+        var router = this.auxRouter(this.hostComponent);
+        this._auxRouters.set(outletName, router);
+        router._outlet = outlet;
+        var auxInstruction;
+        if (isPresent(this._currentInstruction) &&
+            isPresent(auxInstruction = this._currentInstruction.auxInstruction[outletName])) {
+            return router.commit(auxInstruction);
+        }
+        return _resolveToTrue;
+    };
+    /**
+     * Given an instruction, returns `true` if the instruction is currently active,
+     * otherwise `false`.
+     */
+    Router.prototype.isRouteActive = function (instruction) {
+        var router = this;
+        while (isPresent(router.parent) && isPresent(instruction.child)) {
+            router = router.parent;
+            instruction = instruction.child;
+        }
+        return isPresent(this._currentInstruction) &&
+            this._currentInstruction.component == instruction.component;
+    };
+    /**
+     * Dynamically update the routing configuration and trigger a navigation.
+     *
+     * ### Usage
+     *
+     * ```
+     * router.config([
+     *   { 'path': '/', 'component': IndexComp },
+     *   { 'path': '/user/:id', 'component': UserComp },
+     * ]);
+     * ```
+     */
+    Router.prototype.config = function (definitions) {
+        var _this = this;
+        definitions.forEach(function (routeDefinition) { _this.registry.config(_this.hostComponent, routeDefinition); });
+        return this.renavigate();
+    };
+    /**
+     * Navigate based on the provided Route Link DSL. It's preferred to navigate with this method
+     * over `navigateByUrl`.
+     *
+     * ### Usage
+     *
+     * This method takes an array representing the Route Link DSL:
+     * ```
+     * ['./MyCmp', {param: 3}]
+     * ```
+     * See the {@link RouterLink} directive for more.
+     */
+    Router.prototype.navigate = function (linkParams) {
+        var instruction = this.generate(linkParams);
+        return this.navigateByInstruction(instruction, false);
+    };
+    /**
+     * Navigate to a URL. Returns a promise that resolves when navigation is complete.
+     * It's preferred to navigate with `navigate` instead of this method, since URLs are more brittle.
+     *
+     * If the given URL begins with a `/`, router will navigate absolutely.
+     * If the given URL does not begin with `/`, the router will navigate relative to this component.
+     */
+    Router.prototype.navigateByUrl = function (url, _skipLocationChange) {
+        var _this = this;
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        return this._currentNavigation = this._currentNavigation.then(function (_) {
+            _this.lastNavigationAttempt = url;
+            _this._startNavigating();
+            return _this._afterPromiseFinishNavigating(_this.recognize(url).then(function (instruction) {
+                if (isBlank(instruction)) {
+                    return false;
+                }
+                return _this._navigate(instruction, _skipLocationChange);
+            }));
+        });
+    };
+    /**
+     * Navigate via the provided instruction. Returns a promise that resolves when navigation is
+     * complete.
+     */
+    Router.prototype.navigateByInstruction = function (instruction, _skipLocationChange) {
+        var _this = this;
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        if (isBlank(instruction)) {
+            return _resolveToFalse;
+        }
+        return this._currentNavigation = this._currentNavigation.then(function (_) {
+            _this._startNavigating();
+            return _this._afterPromiseFinishNavigating(_this._navigate(instruction, _skipLocationChange));
+        });
+    };
+    /** @internal */
+    Router.prototype._settleInstruction = function (instruction) {
+        var _this = this;
+        return instruction.resolveComponent().then(function (_) {
+            var unsettledInstructions = [];
+            if (isPresent(instruction.component)) {
+                instruction.component.reuse = false;
+            }
+            if (isPresent(instruction.child)) {
+                unsettledInstructions.push(_this._settleInstruction(instruction.child));
+            }
+            StringMapWrapper.forEach(instruction.auxInstruction, function (instruction, _) {
+                unsettledInstructions.push(_this._settleInstruction(instruction));
+            });
+            return PromiseWrapper.all(unsettledInstructions);
+        });
+    };
+    /** @internal */
+    Router.prototype._navigate = function (instruction, _skipLocationChange) {
+        var _this = this;
+        return this._settleInstruction(instruction)
+            .then(function (_) { return _this._routerCanReuse(instruction); })
+            .then(function (_) { return _this._canActivate(instruction); })
+            .then(function (result) {
+            if (!result) {
+                return false;
+            }
+            return _this._routerCanDeactivate(instruction)
+                .then(function (result) {
+                if (result) {
+                    return _this.commit(instruction, _skipLocationChange)
+                        .then(function (_) {
+                        _this._emitNavigationFinish(instruction.toRootUrl());
+                        return true;
+                    });
+                }
+            });
+        });
+    };
+    Router.prototype._emitNavigationFinish = function (url) { ObservableWrapper.callEmit(this._subject, url); };
+    Router.prototype._afterPromiseFinishNavigating = function (promise) {
+        var _this = this;
+        return PromiseWrapper.catchError(promise.then(function (_) { return _this._finishNavigating(); }), function (err) {
+            _this._finishNavigating();
+            throw err;
+        });
+    };
+    /*
+     * Recursively set reuse flags
+     */
+    /** @internal */
+    Router.prototype._routerCanReuse = function (instruction) {
+        var _this = this;
+        if (isBlank(this._outlet)) {
+            return _resolveToFalse;
+        }
+        if (isBlank(instruction.component)) {
+            return _resolveToTrue;
+        }
+        return this._outlet.routerCanReuse(instruction.component)
+            .then(function (result) {
+            instruction.component.reuse = result;
+            if (result && isPresent(_this._childRouter) && isPresent(instruction.child)) {
+                return _this._childRouter._routerCanReuse(instruction.child);
+            }
+        });
+    };
+    Router.prototype._canActivate = function (nextInstruction) {
+        return canActivateOne(nextInstruction, this._currentInstruction);
+    };
+    Router.prototype._routerCanDeactivate = function (instruction) {
+        var _this = this;
+        if (isBlank(this._outlet)) {
+            return _resolveToTrue;
+        }
+        var next;
+        var childInstruction = null;
+        var reuse = false;
+        var componentInstruction = null;
+        if (isPresent(instruction)) {
+            childInstruction = instruction.child;
+            componentInstruction = instruction.component;
+            reuse = isBlank(instruction.component) || instruction.component.reuse;
+        }
+        if (reuse) {
+            next = _resolveToTrue;
+        }
+        else {
+            next = this._outlet.routerCanDeactivate(componentInstruction);
+        }
+        // TODO: aux route lifecycle hooks
+        return next.then(function (result) {
+            if (result == false) {
+                return false;
+            }
+            if (isPresent(_this._childRouter)) {
+                return _this._childRouter._routerCanDeactivate(childInstruction);
+            }
+            return true;
+        });
+    };
+    /**
+     * Updates this router and all descendant routers according to the given instruction
+     */
+    Router.prototype.commit = function (instruction, _skipLocationChange) {
+        var _this = this;
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        this._currentInstruction = instruction;
+        var next = _resolveToTrue;
+        if (isPresent(this._outlet) && isPresent(instruction.component)) {
+            var componentInstruction = instruction.component;
+            if (componentInstruction.reuse) {
+                next = this._outlet.reuse(componentInstruction);
+            }
+            else {
+                next =
+                    this.deactivate(instruction).then(function (_) { return _this._outlet.activate(componentInstruction); });
+            }
+            if (isPresent(instruction.child)) {
+                next = next.then(function (_) {
+                    if (isPresent(_this._childRouter)) {
+                        return _this._childRouter.commit(instruction.child);
+                    }
+                });
+            }
+        }
+        var promises = [];
+        this._auxRouters.forEach(function (router, name) {
+            if (isPresent(instruction.auxInstruction[name])) {
+                promises.push(router.commit(instruction.auxInstruction[name]));
+            }
+        });
+        return next.then(function (_) { return PromiseWrapper.all(promises); });
+    };
+    /** @internal */
+    Router.prototype._startNavigating = function () { this.navigating = true; };
+    /** @internal */
+    Router.prototype._finishNavigating = function () { this.navigating = false; };
+    /**
+     * Subscribe to URL updates from the router
+     */
+    Router.prototype.subscribe = function (onNext) {
+        return ObservableWrapper.subscribe(this._subject, onNext);
+    };
+    /**
+     * Removes the contents of this router's outlet and all descendant outlets
+     */
+    Router.prototype.deactivate = function (instruction) {
+        var _this = this;
+        var childInstruction = null;
+        var componentInstruction = null;
+        if (isPresent(instruction)) {
+            childInstruction = instruction.child;
+            componentInstruction = instruction.component;
+        }
+        var next = _resolveToTrue;
+        if (isPresent(this._childRouter)) {
+            next = this._childRouter.deactivate(childInstruction);
+        }
+        if (isPresent(this._outlet)) {
+            next = next.then(function (_) { return _this._outlet.deactivate(componentInstruction); });
+        }
+        // TODO: handle aux routes
+        return next;
+    };
+    /**
+     * Given a URL, returns an instruction representing the component graph
+     */
+    Router.prototype.recognize = function (url) {
+        var ancestorComponents = this._getAncestorInstructions();
+        return this.registry.recognize(url, ancestorComponents);
+    };
+    Router.prototype._getAncestorInstructions = function () {
+        var ancestorInstructions = [this._currentInstruction];
+        var ancestorRouter = this;
+        while (isPresent(ancestorRouter = ancestorRouter.parent)) {
+            ancestorInstructions.unshift(ancestorRouter._currentInstruction);
+        }
+        return ancestorInstructions;
+    };
+    /**
+     * Navigates to either the last URL successfully navigated to, or the last URL requested if the
+     * router has yet to successfully navigate.
+     */
+    Router.prototype.renavigate = function () {
+        if (isBlank(this.lastNavigationAttempt)) {
+            return this._currentNavigation;
+        }
+        return this.navigateByUrl(this.lastNavigationAttempt);
+    };
+    /**
+     * Generate an `Instruction` based on the provided Route Link DSL.
+     */
+    Router.prototype.generate = function (linkParams) {
+        var ancestorInstructions = this._getAncestorInstructions();
+        return this.registry.generate(linkParams, ancestorInstructions);
+    };
+    return Router;
+})();
+exports.Router = Router;
+var RootRouter = (function (_super) {
+    __extends(RootRouter, _super);
+    function RootRouter(registry, location, primaryComponent) {
+        var _this = this;
+        _super.call(this, registry, null, primaryComponent);
+        this._location = location;
+        this._locationSub = this._location.subscribe(function (change) {
+            // we call recognize ourselves
+            _this.recognize(change['url'])
+                .then(function (instruction) {
+                _this.navigateByInstruction(instruction, isPresent(change['pop']))
+                    .then(function (_) {
+                    // this is a popstate event; no need to change the URL
+                    if (isPresent(change['pop']) && change['type'] != 'hashchange') {
+                        return;
+                    }
+                    var emitPath = instruction.toUrlPath();
+                    var emitQuery = instruction.toUrlQuery();
+                    if (emitPath.length > 0 && emitPath[0] != '/') {
+                        emitPath = '/' + emitPath;
+                    }
+                    // Because we've opted to use All hashchange events occur outside Angular.
+                    // However, apps that are migrating might have hash links that operate outside
+                    // angular to which routing must respond.
+                    // To support these cases where we respond to hashchanges and redirect as a
+                    // result, we need to replace the top item on the stack.
+                    if (change['type'] == 'hashchange') {
+                        if (instruction.toRootUrl() != _this._location.path()) {
+                            _this._location.replaceState(emitPath, emitQuery);
+                        }
+                    }
+                    else {
+                        _this._location.go(emitPath, emitQuery);
+                    }
+                });
+            });
+        });
+        this.registry.configFromComponent(primaryComponent);
+        this.navigateByUrl(location.path());
+    }
+    RootRouter.prototype.commit = function (instruction, _skipLocationChange) {
+        var _this = this;
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        var emitPath = instruction.toUrlPath();
+        var emitQuery = instruction.toUrlQuery();
+        if (emitPath.length > 0 && emitPath[0] != '/') {
+            emitPath = '/' + emitPath;
+        }
+        var promise = _super.prototype.commit.call(this, instruction);
+        if (!_skipLocationChange) {
+            promise = promise.then(function (_) { _this._location.go(emitPath, emitQuery); });
+        }
+        return promise;
+    };
+    RootRouter.prototype.dispose = function () {
+        if (isPresent(this._locationSub)) {
+            ObservableWrapper.dispose(this._locationSub);
+            this._locationSub = null;
+        }
+    };
+    return RootRouter;
+})(Router);
+exports.RootRouter = RootRouter;
+var ChildRouter = (function (_super) {
+    __extends(ChildRouter, _super);
+    function ChildRouter(parent, hostComponent) {
+        _super.call(this, parent.registry, parent, hostComponent);
+        this.parent = parent;
+    }
+    ChildRouter.prototype.navigateByUrl = function (url, _skipLocationChange) {
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        // Delegate navigation to the root router
+        return this.parent.navigateByUrl(url, _skipLocationChange);
+    };
+    ChildRouter.prototype.navigateByInstruction = function (instruction, _skipLocationChange) {
+        if (_skipLocationChange === void 0) { _skipLocationChange = false; }
+        // Delegate navigation to the root router
+        return this.parent.navigateByInstruction(instruction, _skipLocationChange);
+    };
+    return ChildRouter;
+})(Router);
+function canActivateOne(nextInstruction, prevInstruction) {
+    var next = _resolveToTrue;
+    if (isBlank(nextInstruction.component)) {
+        return next;
+    }
+    if (isPresent(nextInstruction.child)) {
+        next = canActivateOne(nextInstruction.child, isPresent(prevInstruction) ? prevInstruction.child : null);
+    }
+    return next.then(function (result) {
+        if (result == false) {
+            return false;
+        }
+        if (nextInstruction.component.reuse) {
+            return true;
+        }
+        var hook = route_lifecycle_reflector_1.getCanActivateHook(nextInstruction.component.componentType);
+        if (isPresent(hook)) {
+            return hook(nextInstruction.component, isPresent(prevInstruction) ? prevInstruction.component : null);
+        }
+        return true;
+    });
 }
 
 
-})(window, window.angular);
+  //TODO: this is a hack to replace the exiting implementation at run-time
+  exports.getCanActivateHook = function (directiveName) {
+    var factory = $$directiveIntrospector.getTypeByName(directiveName);
+    return factory && factory.$canActivate && function (next, prev) {
+      return $injector.invoke(factory.$canActivate, null, {
+        $nextInstruction: next,
+        $prevInstruction: prev
+      });
+    };
+  };
+
+  // This hack removes assertions about the type of the "component"
+  // property in a route config
+  exports.assertComponentExists = function () {};
+
+  angular.stringifyInstruction = function (instruction) {
+    return instruction.toRootUrl();
+  };
+
+  var RouteRegistry = exports.RouteRegistry;
+  var RootRouter = exports.RootRouter;
+
+  var registry = new RouteRegistry($routerRootComponent);
+  var location = new Location();
+
+  $$directiveIntrospector(function (name, factory) {
+    if (angular.isArray(factory.$routeConfig)) {
+      factory.$routeConfig.forEach(function (config) {
+        registry.config(name, config);
+      });
+    }
+  });
+
+  var router = new RootRouter(registry, location, $routerRootComponent);
+  $rootScope.$watch(function () { return $location.url(); }, function (path) {
+    if (router.lastNavigationAttempt !== path) {
+      router.navigateByUrl(path);
+    }
+  });
+
+  router.subscribe(function () {
+    $rootScope.$broadcast('$routeChangeSuccess', {});
+  });
+
+  return router;
+}
+
+}());
