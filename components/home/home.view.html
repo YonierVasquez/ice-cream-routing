@@ -1,0 +1,36 @@
+<header class="header--report">
+    <h1>🍨 Reporte de disponibilidad de helados</h1>
+    <ul>
+        <a href="">Acerca de la app</a>
+        <a href="">Opi</a>
+    </ul>
+</header>
+
+<main ng-controller="homeController">
+    <div class="container">
+        <p>En la siguiente tabla se muestran los helados disponibles hasta el momento</p>
+        <button class="btn--primary" ng-click="updateTable()">
+            <span class="material-symbols-outlined">autorenew</span>
+            Actulizar tabla
+        </button>
+
+        <table class="products--table">
+            <thead>
+                <tr>
+                    <td>Sabor</td>
+                    <td>Precio</td>
+                    <td>Calorias</td>
+                    <td>Pais origen</td>
+                </tr>
+            </thead>
+            <tbody>
+                <tr ng-repeat="iceCream in iceCreamsList">
+                    <td>{{ iceCream.sabor }}</td>
+                    <td>${{ iceCream.precio }}</td>
+                    <td>{{ iceCream.calorias }}</td>
+                    <td>{{ iceCream.paisOrigen }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</main>
