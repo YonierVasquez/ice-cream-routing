@@ -44,6 +44,7 @@ p {
     cursor: pointer;
     font-size: 0.9em;
     border-radius: 5px;
+    margin-right: 20px;
 }
 .btn--primary:hover {
     background: #3c5dff;

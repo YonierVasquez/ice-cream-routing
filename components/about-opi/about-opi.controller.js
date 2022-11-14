@@ -1,6 +1,6 @@
 (function(angular) {
 
-    angular.module('aboutOpi', [])
+    angular.module('aboutOpiModule', [])
 
         .component('aboutOpiComponent', {
             templateUrl: 'components/about-opi/about-opi.view.html',

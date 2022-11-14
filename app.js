@@ -1,6 +1,6 @@
 (function (angular) {
 
-    angular.module('app', ['ngComponentRouter', 'home', 'aboutApp', 'aboutOpi', 'navigationBarModule'])
+    angular.module('app', ['ngComponentRouter', 'homeModule', 'aboutAppModule', 'aboutOpiModule', 'navigationBarModule'])
 
         .config(function ($locationProvider) {
             $locationProvider.html5Mode(true);
