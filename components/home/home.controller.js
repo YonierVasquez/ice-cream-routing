@@ -6,8 +6,6 @@
             $locationProvider.html5Mode(true);
         })
 
-        .value('$routerRootComponent', 'app')
-
         .controller("homeController", ['$scope', 'iceCreamService', function ($scope, iceCreamService) {
             $scope.iceCreamsList = iceCreamService.getIceCreams()
             $scope.updateTable = function () {

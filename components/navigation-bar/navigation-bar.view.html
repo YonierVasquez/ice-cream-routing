@@ -1,5 +1,5 @@
-<nav>
-
+<nav ng-controller="navigationBarController">
+    <ul>
+        <li ng-repeat="item in links" ng-link="['{{ item.url }}']">{{ item.name }}</li>
+    </ul>
 </nav>
-
-<p ng-controller="navigationBarController">My city is {{ city }}</p>

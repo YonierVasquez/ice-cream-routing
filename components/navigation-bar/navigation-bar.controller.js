@@ -1,5 +1,20 @@
 (function(angular) {
 
+    const links = [
+        {
+            name: 'Home',
+            url: 'Home'
+        },
+        {
+            name: 'About App',
+            url: 'AboutApp'
+        },
+        {
+            name: 'About Opi',
+            url: 'AboutOpi'
+        }
+    ]
+
     angular.module('navigationBarModule', [])
 
     .component('navigationBarComponent', {
@@ -7,7 +22,7 @@
     })
 
     .controller('navigationBarController', function($scope) {
-        $scope.city = 'Manizales'
+        $scope.links = links;
     })
 
 })(window.angular);

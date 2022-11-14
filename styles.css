@@ -5,6 +5,17 @@
 body {
     margin: 16px 40px;
 }
+nav > ul {
+    list-style: none;
+    padding: 0px;
+}
+nav > ul > li {
+    display: inline;
+    margin-right: 40px;
+    color: blue;
+    font-weight: bold;
+    cursor: pointer;
+}
 .header--report {
     display: flex;
     align-items: center;
