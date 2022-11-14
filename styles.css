@@ -34,6 +34,9 @@ p {
     font-size: 0.9em;
     border-radius: 5px;
 }
+.btn--primary:hover {
+    background: #3c5dff;
+}
 .btn--primary:active {
     background: #3b4db7;
 }
