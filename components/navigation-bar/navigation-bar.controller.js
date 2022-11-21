@@ -12,6 +12,10 @@
         {
             name: 'About Opi',
             url: 'AboutOpi'
+        },
+        {
+            name: 'Nuestros equipos',
+            url: 'Computers'
         }
     ]
 
