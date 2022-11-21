@@ -27,6 +27,34 @@
                     $scope.iceCreamsList = iceCreams
                 })
             }
+
+            /**
+             * PRUEBA: reactividad de multiples variables
+             */
+            // $scope.var1 = true
+            // $scope.var2 = true
+
+            // // Cambiar el valor de las dos variables en el tiempo
+            // window.setInterval(function () {
+            //     $scope.var1 = !$scope.var1
+            //     $scope.$apply()
+            // }, 1000);
+            // window.setInterval(function () {
+            //     $scope.var2 = !$scope.var2
+            //     $scope.$apply()
+            // }, 500);
+
+            // $scope.textoHabilitado = true
+
+            // // Escuchar cambios en las variables
+            // $scope.$watchGroup(['var1', 'var2'], function (newValues, oldValues, scope) {
+            //     scope.mostrarTexto = newValues[0] && newValues[1]
+            // })
+
+            // var vm = this;
+
+            //vm is observable as it is assigned
+            // $scope.$watch(function (scope) { return vm.text; },
         }])
 
         .component("homeComponent", {
