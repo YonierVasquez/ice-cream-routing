@@ -14,7 +14,7 @@
             url: 'AboutOpi'
         },
         {
-            name: 'Nuestros equipos',
+            name: 'Nuestra tecnología',
             url: 'Computers'
         }
     ]

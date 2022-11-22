@@ -1,43 +1,55 @@
 * {
     font-family: Arial, Helvetica, sans-serif;
+    /* color: rgb(80 80 80); */
+}
+
+p, h1, h2, h3, h4, h5, h6 {
     color: rgb(80 80 80);
 }
+
 body {
     margin: 16px 40px;
 }
-nav > ul {
+
+nav>ul {
     list-style: none;
     padding: 0px;
     margin-top: 28px;
 }
-nav > ul > li {
+
+nav>ul>li {
     display: inline;
     margin-right: 40px;
     color: blue;
     font-weight: bold;
     cursor: pointer;
 }
+
 .header--report {
     display: flex;
     align-items: center;
     justify-content: space-between;
     margin-bottom: 16px;
 }
-.header--report > ul > a {
+
+.header--report>ul>a {
     text-decoration: none;
     color: blue;
     font-weight: 700;
     margin-left: 28px;
 }
+
 .container {
     background-color: #e7e7e7;
     padding: 12px 52px 28px;
     border-radius: 12px;
     margin-bottom: 32px;
 }
+
 p {
     font-size: 1.2em;
 }
+
 .btn--primary {
     background: #4c6aff;
     border: 1px solid;
@@ -48,30 +60,96 @@ p {
     border-radius: 5px;
     margin-right: 20px;
 }
+
 .btn--primary:hover {
     background: #3c5dff;
 }
+
 .btn--primary:active {
     background: #3b4db7;
 }
-.btn--primary > span {
+
+.btn--primary>span {
     color: white;
     vertical-align: middle;
 }
+
 .products--table {
     margin-top: 20px;
     border: none;
     width: 1000px;
     text-align: center;
 }
-.products--table > thead {
+
+.products--table>thead {
     background-color: #0adb71;
     color: white !important;
     font-weight: bold;
 }
-.products--table > thead > tr > td {
+
+.products--table>thead>tr>td {
     border-radius: 4px;
 }
-.products--table  tr {
+
+.products--table tr {
     height: 32px;
+}
+
+/* Computers card */
+.computers--list {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-gap: 20px;
+}
+
+.computer--card {
+    max-width: 380px;
+    width: 100%;
+    background: #ffffff;
+    padding: 16px;
+    border-radius: 4px;
+    box-shadow: 0px 0px 4px 1px #a9a9a9;
+    color: rgb(80 80 80);
+}
+
+.computer--card--header {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.computer--brand {
+    display: block;
+    font-size: 1.3rem;
+    margin-bottom: 4px;
+}
+
+.computer--id {
+    font-size: 0.8rem;
+}
+
+.btn--option {
+    margin-left: 12px;
+    background: #d9dbdf;
+    color: #666666;
+    border: none;
+    border-radius: 3px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+
+.computer--card--details {
+    margin-top: 16px;
+}
+
+.computer--property {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    font-size: 1rem;
+}
+
+.computer--property>span {
+    margin-right: 12px;
 }
