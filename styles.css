@@ -8,6 +8,7 @@ body {
 nav > ul {
     list-style: none;
     padding: 0px;
+    margin-top: 28px;
 }
 nav > ul > li {
     display: inline;
