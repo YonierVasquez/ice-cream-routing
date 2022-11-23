@@ -3,260 +3,54 @@
 <h1>Nuestra tecnología</h1>
 <p>A continuación tienes a tu disposición una amplia gama de equipos disponibles.</p>
 
-<button class="btn--primary">
-    <span class="material-symbols-outlined">add</span>
-    Nuevo computador
-</button>
+<main ng-controller="computersController">
 
-<div class="computers--list">
-    <div class="computer--card">
+    <button class="btn--primary">
+        <span class="material-symbols-outlined">add</span>
+        Nuevo computador
+    </button>
 
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
+    <div class="computers--list">
+
+        <div class="computer--card" ng-repeat="computer in computersList">
+            <div class="computer--card--header">
+                <div>
+                    <span class="computer--brand">{{computer.marca}} {{computer.modelo}}</span>
+                    <span class="computer--id">{{computer.identification}}, lanzamiento: {{computer.yearLanzamiento}}</span>
+                </div>
+                <div>
+                    <button class="btn--option">
+                        <span class="material-symbols-outlined">edit</span>
+                    </button>
+                    <button class="btn--option">
+                        <span class="material-symbols-outlined">delete</span>
+                    </button>
+                </div>
             </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
+            <div class="computer--card--details">
+                <div class="computer--property">
+                    <span class="material-symbols-outlined">palette</span>
+                    {{computer.color}}
+                </div>
+                <div class="computer--property">
+                    <span class="material-symbols-outlined">memory</span>
+                    {{computer.procesador}}
+                </div>
+                <div class="computer--property">
+                    <span class="material-symbols-outlined">insights</span>
+                    {{computer.capacidadDefectoRam}}GB (máximo {{computer.capacidadMaximaRam}}GB)
+                </div>
+                <div class="computer--property">
+                    <span class="material-symbols-outlined">storage</span>
+                    {{computer.capacidadDisco}} {{computer.tipoDisco}}
+                </div>
+                <div class="computer--property">
+                    <span class="material-symbols-outlined">computer</span>
+                    {{computer.tipoComputador}}
+                </div>
             </div>
         </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
 
     </div>
 
-    <div class="computer--card">
-
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
-            </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
-
-    </div>
-
-    <div class="computer--card">
-
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
-            </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
-
-    </div>
-
-
-    <div class="computer--card">
-
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
-            </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
-
-    </div>
-
-
-    <div class="computer--card">
-
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
-            </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
-
-    </div>
-
-
-
-    <div class="computer--card">
-
-        <!-- encabezado -->
-        <div class="computer--card--header">
-            <div>
-                <span class="computer--brand">Lenovo Thinkerpad</span>
-                <span class="computer--id">serial-1234abM, lanzamiento: 2016</span>
-            </div>
-            <div>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">edit</span>
-                </button>
-                <button class="btn--option">
-                    <span class="material-symbols-outlined">delete</span>
-                </button>
-            </div>
-        </div>
-
-        <!-- detalles computador -->
-        <div class="computer--card--details">
-            <div class="computer--property">
-                <span class="material-symbols-outlined">palette</span>
-                Azul metálico
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">memory</span>
-                4GB (máximo 16GB)
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">storage</span>
-                1TB SSD
-            </div>
-            <div class="computer--property">
-                <span class="material-symbols-outlined">computer</span>
-                Portátil
-            </div>
-        </div>
-
-
-    </div>
-
-</div>
+</main>

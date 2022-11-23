@@ -83,8 +83,12 @@ p {
 
 .products--table>thead {
     background-color: #0adb71;
-    color: white !important;
+    color: white;
     font-weight: bold;
+}
+
+.products--table>tbody {
+    color: rgb(80 80 80);
 }
 
 .products--table>thead>tr>td {
