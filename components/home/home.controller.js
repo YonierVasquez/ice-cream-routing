@@ -1,12 +1,16 @@
 (function (angular) {
 
-    angular.module('homeModule', ['iceCreamService'])
+    angular.module('homeModule', ['iceCreamService', 'ui.bootstrap'])
 
         .config(function ($locationProvider) {
             $locationProvider.html5Mode(true);
         })
 
-        .controller("homeController", ['$scope', 'iceCreamService', function ($scope, iceCreamService) {
+        .component("homeComponent", {
+            templateUrl: 'components/home/home.view.html',
+        })
+
+        .controller("homeController", ['$scope', 'iceCreamService', '$uibModal', function ($scope, iceCreamService, $uibModal) {
             $scope.iceCreamsList = iceCreamService.getIceCreams()
 
             // Forma 1: obtener directamente la lista
@@ -28,37 +32,49 @@
                 })
             }
 
-            /**
-             * PRUEBA: reactividad de multiples variables
-             */
-            // $scope.var1 = true
-            // $scope.var2 = true
+            // DATOS PARA EL MODAL DE BOOTSTRAP
+            $scope.open = function () {
+                let modalInstance = $uibModal.open({
+                    animation: true,
+                    ariaLabelledBy: 'modal-title',
+                    ariaDescribedBy: 'modal-body',
+                    templateUrl: 'myModalContent.html',
+                    controller: 'ModalInstanceCtrl',
+                    controllerAs: '$modalCtrl',
+                    size: undefined,
+                    resolve: {
+                        // Datos para inyectarle al modal
+                        year: function () {
+                            return '2022';
+                        }
+                    }
+                });
 
-            // // Cambiar el valor de las dos variables en el tiempo
-            // window.setInterval(function () {
-            //     $scope.var1 = !$scope.var1
-            //     $scope.$apply()
-            // }, 1000);
-            // window.setInterval(function () {
-            //     $scope.var2 = !$scope.var2
-            //     $scope.$apply()
-            // }, 500);
-
-            // $scope.textoHabilitado = true
-
-            // // Escuchar cambios en las variables
-            // $scope.$watchGroup(['var1', 'var2'], function (newValues, oldValues, scope) {
-            //     scope.mostrarTexto = newValues[0] && newValues[1]
-            // })
-
-            // var vm = this;
-
-            //vm is observable as it is assigned
-            // $scope.$watch(function (scope) { return vm.text; },
+                modalInstance.result.then(
+                    // Operar con lo que envia el modal cuando se da el OK
+                    function (brand) {
+                        console.log(brand);
+                    },
+                    // Operar con lo que envia el modal cuando se da el CANCEL
+                    function (msgCancel) {
+                        console.log(msgCancel);
+                    });
+            }
         }])
 
-        .component("homeComponent", {
-            templateUrl: 'components/home/home.view.html',
+        .controller('ModalInstanceCtrl', function ($uibModalInstance, year) {
+            var $modalCtrl = this;
+            $modalCtrl.brand = 'Lenovo'
+            $modalCtrl.year = year
+            $modalCtrl.color = 'red'
+
+            $modalCtrl.ok = function () {
+                $uibModalInstance.close($modalCtrl.brand);
+            };
+
+            $modalCtrl.cancel = function () {
+                $uibModalInstance.dismiss('Cancelado');
+            };
         })
 
 })(window.angular);

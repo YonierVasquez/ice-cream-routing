@@ -1,6 +1,5 @@
 * {
     font-family: Arial, Helvetica, sans-serif;
-    /* color: rgb(80 80 80); */
 }
 
 p, h1, h2, h3, h4, h5, h6 {
@@ -157,3 +156,6 @@ p {
 .computer--property>span {
     margin-right: 12px;
 }
+
+/* para bootstrap */
+.nav, .pagination, .carousel, .panel-title a { cursor: pointer; }

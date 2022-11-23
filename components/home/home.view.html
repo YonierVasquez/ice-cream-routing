@@ -43,15 +43,22 @@
         </table>
     </div>
 
-    <!-- <div class="container">
-        <div class="container--prueba">
-            <h2>Reactividad de multiples variables</h2>
-            <p>El siguiente texto se activa cuando la variables involucradas estén activadas</p>
-            <p>Estado de las variables: <span ng-show="textoHabilitado">ACTIVAS</span></p>
-        </div>
-    </div> -->
-</main>
+    <button ng-click="open()">abrir modal</button>
 
-<div>
-    
-</div>
+    <!-- Modal -->
+    <script type="text/ng-template" id="myModalContent.html">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modal-title">I'm a modal!</h3>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <input type="text" name="" id="" value="{{$modalCtrl.brand}}">
+            <input type="text" name="" id="" value="{{$modalCtrl.year}}">
+            <input type="tel" name="" id="" ng-model="$modalCtrl.color">
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" type="button" ng-click="$modalCtrl.ok()">OK</button>
+            <button class="btn btn-warning" type="button" ng-click="$modalCtrl.cancel()">Cancel</button>
+        </div>
+    </script>
+
+</main>

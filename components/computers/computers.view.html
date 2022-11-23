@@ -5,7 +5,7 @@
 
 <main ng-controller="computersController">
 
-    <button class="btn--primary">
+    <button class="btn--primary" ng-click="open()">
         <span class="material-symbols-outlined">add</span>
         Nuevo computador
     </button>
@@ -16,7 +16,8 @@
             <div class="computer--card--header">
                 <div>
                     <span class="computer--brand">{{computer.marca}} {{computer.modelo}}</span>
-                    <span class="computer--id">{{computer.identification}}, lanzamiento: {{computer.yearLanzamiento}}</span>
+                    <span class="computer--id">{{computer.identification}}, lanzamiento:
+                        {{computer.yearLanzamiento}}</span>
                 </div>
                 <div>
                     <button class="btn--option">
@@ -52,5 +53,19 @@
         </div>
 
     </div>
+
+    <!-- Modal para crear un computador -->
+    <script type="text/ng-template" id="myModalContent.html">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modal-title">I'm a modal!</h3>
+        </div>
+        <div class="modal-body" id="modal-body">
+            <p>Modal body</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" type="button" ng-click="$modalCtrl.ok()">OK</button>
+            <button class="btn btn-warning" type="button" ng-click="$modalCtrl.cancel()">Cancel</button>
+        </div>
+    </script>
 
 </main>
