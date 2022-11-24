@@ -1,4 +1,4 @@
-(function(angular) {
+(function (angular) {
 
     // Datos de pruebas
     let computersList = [
@@ -132,20 +132,52 @@
 
     angular.module("computersService", [])
 
-        .factory("computersService", function () {
+        .factory("computersService", ["$http", function ($http) {
             return {
                 getComputers: function () {
-                    return Promise.resolve(computersList)
+                    return $http({
+                        method: 'GET',
+                        url: 'https://localhost:44329/Computers',
+                        headers: {
+                            'Access-Control-Allow-Origin': '*',
+                        }
+                    })
                 },
-                addComputer: function(computer) {
+                addComputer: function (computer) {
                     console.log('new computer', computer)
-                    return Promise.resolve(true)
+                    return {
+                        getComputers: function () {
+
+                            return $http({
+                                method: 'POST',
+                                url: 'https://localhost:44329/Computers/create',
+                                headers: {
+                                    'Access-Control-Allow-Origin': '*',
+                                },
+                                date: {
+                                    computer: computer
+                                }
+                            }).then(function (valido) {
+                                if (valido) {
+                                    $scope.computersList.push(newComputer)
+                                    console.log("Valida");
+                                    console.log(valido);
+                                    return valido;
+                                }
+                            }).then(function (valido){
+                                console.log("no Valida");
+                                console.log(valido)
+                                console.log()
+                            })
+                        },
+
+                    }
                 },
-                deleteComputer: function(computerId) {
+                deleteComputer: function (computerId) {
                     console.log('delete computer', computerId)
                     return Promise.resolve(true)
                 }
             }
-        })
+        }])
 
 })(window.angular)
