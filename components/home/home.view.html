@@ -46,19 +46,44 @@
     <button ng-click="open()">abrir modal</button>
 
     <!-- Modal -->
-    <script type="text/ng-template" id="myModalContent.html">
+    <!-- <script type="text/ng-template" id="myModalContent.html">
         <div class="modal-header">
-            <h3 class="modal-title" id="modal-title">I'm a modal!</h3>
+            <h3 class="modal-title" id="modal-title">Crear un nuevo equipo</h3>
         </div>
-        <div class="modal-body" id="modal-body">
-            <input type="text" name="" id="" value="{{$modalCtrl.brand}}">
-            <input type="text" name="" id="" value="{{$modalCtrl.year}}">
-            <input type="tel" name="" id="" ng-model="$modalCtrl.color">
+
+        <div class="modal-body modal--body--create" id="modal-body">
+            <label for="marca">Marca</label><br>
+            <input type="text" name="" id="marca" class="form-control" ng-model="marca"><br>
+            <label for="modelo">Modelo</label><br>
+            <input type="text" name="" id="modelo" class="form-control" ng-model="modelo"><br>
+            <label for="year">Año lanzamiento</label><br>
+            <input type="number" name="" id="year" class="form-control" ng-model="year"><br>
+            <label for="color">Color</label><br>
+            <input type="text" name="" id="color" class="form-control" ng-model="color"><br>
+            <label for="capDefRam">Capacidad defecto RAM</label><br>
+            <input type="number" name="" id="capDefRam" class="form-control" ng-model="capacidadDefectoRam"><br>
+            <label for="capMaxRam">Capacidad máxima RAM</label><br>
+            <input type="number" name="" id="capMaxRam" class="form-control" ng-model="capacidadMaximaRam"><br>
+            <label for="procesador">Procesador</label><br>
+            <input type="text" name="" id="procesador" class="form-control" ng-model="procesador"><br>
+            <label for="tipoDisco">Tipo disco</label><br>
+            <select class="form-select form-select-sm select--tipo" ng-model="tipoDisco">
+                <option selected value="SSD">SSD</option>
+                <option value="HDD">HDD</option>
+            </select><br><br>
+            <label for="capacidadDisco">Capacidad disco</label><br>
+            <input type="text" name="" id="capacidadDisco" class="form-control" ng-model="capacidadDisco"><br>
+            <label for="tipoComputador">Tipo computador</label><br>
+            <select class="form-select form-select-sm select--tipo" ng-model="tipoComputador">
+                <option selected value="portatil">Portatil</option>
+                <option value="escritorio">Escritorio</option>
+            </select>
         </div>
+
         <div class="modal-footer">
             <button class="btn btn-primary" type="button" ng-click="$modalCtrl.ok()">OK</button>
             <button class="btn btn-warning" type="button" ng-click="$modalCtrl.cancel()">Cancel</button>
         </div>
-    </script>
+    </script> -->
 
 </main>

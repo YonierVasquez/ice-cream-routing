@@ -22,8 +22,8 @@
                 });
 
                 modalInstance.result.then(
-                    function (brand) {
-                        console.log(brand);
+                    function (newComputer) {
+                        console.log(newComputer);
                     },
                     function () {}
                 );
@@ -39,9 +39,9 @@
             $modalCtrl.capacidadDefectoRam = ''
             $modalCtrl.capacidadMaximaRam = ''
             $modalCtrl.procesador = ''
-            $modalCtrl.tipoDisco = ''
+            $modalCtrl.tipoDisco = 'SSD'
             $modalCtrl.capacidadDisco = ''
-            $modalCtrl.tipoComputador = ''
+            $modalCtrl.tipoComputador = 'portatil'
 
             $modalCtrl.ok = function () {
                 $uibModalInstance.close({

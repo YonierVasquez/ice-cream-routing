@@ -33,48 +33,59 @@
             }
 
             // DATOS PARA EL MODAL DE BOOTSTRAP
-            $scope.open = function () {
-                let modalInstance = $uibModal.open({
-                    animation: true,
-                    ariaLabelledBy: 'modal-title',
-                    ariaDescribedBy: 'modal-body',
-                    templateUrl: 'myModalContent.html',
-                    controller: 'ModalInstanceCtrl',
-                    controllerAs: '$modalCtrl',
-                    size: undefined,
-                    resolve: {
-                        // Datos para inyectarle al modal
-                        year: function () {
-                            return '2022';
-                        }
-                    }
-                });
+            // $scope.open = function () {
+            //     let modalInstance = $uibModal.open({
+            //         animation: true,
+            //         ariaLabelledBy: 'modal-title',
+            //         ariaDescribedBy: 'modal-body',
+            //         templateUrl: 'myModalContent.html',
+            //         controller: 'ModalInstanceCtrl',
+            //         controllerAs: '$modalCtrl',
+            //         size: undefined,
+            //         resolve: {
+            //             // Datos para inyectarle al modal
+            //             year: function () {
+            //                 return '2022';
+            //             }
+            //         }
+            //     });
 
-                modalInstance.result.then(
-                    // Operar con lo que envia el modal cuando se da el OK
-                    function (brand) {
-                        console.log(brand);
-                    },
-                    // Operar con lo que envia el modal cuando se da el CANCEL
-                    function (msgCancel) {
-                        console.log(msgCancel);
-                    });
-            }
+            //     modalInstance.result.then(
+            //         // Operar con lo que envia el modal cuando se da el OK
+            //         function (brand) {
+            //             console.log(brand);
+            //         },
+            //         // Operar con lo que envia el modal cuando se da el CANCEL
+            //         function (msgCancel) {
+            //             console.log(msgCancel);
+            //         });
+            // }
         }])
 
-        .controller('ModalInstanceCtrl', function ($uibModalInstance, year) {
-            var $modalCtrl = this;
-            $modalCtrl.brand = 'Lenovo'
-            $modalCtrl.year = year
-            $modalCtrl.color = 'red'
+        // .controller('ModalInstanceCtrl', function ($uibModalInstance, year) {
+        //     var $modalCtrl = this;
+        //     $modalCtrl.brand = 'Lenovo'
+        //     $modalCtrl.year = year
+        //     $modalCtrl.color = 'red'
 
-            $modalCtrl.ok = function () {
-                $uibModalInstance.close($modalCtrl.brand);
-            };
+        //     $modalCtrl.marca = ''
+        //     $modalCtrl.modelo = ''
+        //     $modalCtrl.year = ''
+        //     $modalCtrl.color = ''
+        //     $modalCtrl.capacidadDefectoRam = ''
+        //     $modalCtrl.capacidadMaximaRam = ''
+        //     $modalCtrl.procesador = ''
+        //     $modalCtrl.tipoDisco = 'SSD'
+        //     $modalCtrl.capacidadDisco = ''
+        //     $modalCtrl.tipoComputador = 'portatil'
 
-            $modalCtrl.cancel = function () {
-                $uibModalInstance.dismiss('Cancelado');
-            };
-        })
+        //     $modalCtrl.ok = function () {
+        //         $uibModalInstance.close($modalCtrl.brand);
+        //     };
+
+        //     $modalCtrl.cancel = function () {
+        //         $uibModalInstance.dismiss('Cancelado');
+        //     };
+        // })
 
 })(window.angular);

@@ -159,3 +159,15 @@ p {
 
 /* para bootstrap */
 .nav, .pagination, .carousel, .panel-title a { cursor: pointer; }
+
+select.select--tipo {
+    width: 100px;
+    height: 36px;
+    border: 1px #c5c5c5 solid;
+    border-radius: 4px;
+}
+
+.modal--body--create {
+    max-height: 300px;
+    overflow: auto;
+}
