@@ -8,14 +8,13 @@
                 $scope.computersList = computers
             })
 
-            // Abrir modal
-            $scope.open = function () {
+            $scope.openModalCreateComputer = function () {
                 let modalInstance = $uibModal.open({
                     animation: true,
                     ariaLabelledBy: 'modal-title',
                     ariaDescribedBy: 'modal-body',
                     templateUrl: 'myModalContent.html',
-                    controller: 'ModalInstanceCtrl',
+                    controller: 'ModalCreateComputerCtrl',
                     controllerAs: '$modalCtrl',
                     size: undefined,
                     resolve: {}
@@ -23,31 +22,62 @@
 
                 modalInstance.result.then(
                     function (newComputer) {
-                        console.log(newComputer);
+                        computersService.addComputer(newComputer).then(function (valido) {
+                            if (valido) {
+                                $scope.computersList.push(newComputer)
+                            }
+                        })
                     },
                     function () {}
                 );
             }
+
+            $scope.openModalDeleteComputer = function(computerId) {
+                console.log('computerId', computerId);
+                // let modalInstance = $uibModal.open({
+                //     animation: true,
+                //     ariaLabelledBy: 'modal-title',
+                //     ariaDescribedBy: 'modal-body',
+                //     templateUrl: 'myModalDelete.html',
+                //     controller: 'ModalDeleteComputerCtrl',
+                //     controllerAs: '$modalCtrl',
+                //     size: undefined,
+                //     resolve: {}
+                // });
+
+                // modalInstance.result.then(
+                //     function () {
+                //         computersService.deleteComputer(computerId).then(function (valido) {
+                //             if (valido) {
+                //                 $scope.computersList = $scope.computersList.filter(function(computer) {
+                //                     return computer.id !== computerId
+                //                 })
+                //             }
+                //         })
+                //     },
+                //     function () {}
+                // );
+            }
         }])
 
-        .controller('ModalInstanceCtrl', function ($uibModalInstance) {
+        .controller('ModalCreateComputerCtrl', function ($uibModalInstance) {
             var $modalCtrl = this;
             $modalCtrl.marca = ''
             $modalCtrl.modelo = ''
-            $modalCtrl.year = ''
+            $modalCtrl.yearLanzamiento = ''
             $modalCtrl.color = ''
             $modalCtrl.capacidadDefectoRam = ''
             $modalCtrl.capacidadMaximaRam = ''
             $modalCtrl.procesador = ''
             $modalCtrl.tipoDisco = 'SSD'
             $modalCtrl.capacidadDisco = ''
-            $modalCtrl.tipoComputador = 'portatil'
+            $modalCtrl.tipoComputador = 'Portatil'
 
             $modalCtrl.ok = function () {
                 $uibModalInstance.close({
                     marca: $modalCtrl.marca,
                     modelo: $modalCtrl.modelo,
-                    year: $modalCtrl.year,
+                    yearLanzamiento: $modalCtrl.yearLanzamiento,
                     color: $modalCtrl.color,
                     capacidadDefectoRam: $modalCtrl.capacidadDefectoRam,
                     capacidadMaximaRam: $modalCtrl.capacidadMaximaRam,
@@ -61,6 +91,18 @@
             $modalCtrl.cancel = function () {
                 $uibModalInstance.dismiss();
             };
+        })
+
+        .controller('ModalDeleteComputerCtrl', function ($uibModalInstance) {
+            var $modalCtrl = this;
+
+            $modalCtrl.ok = function () {
+                $uibModalInstance.close();
+            }
+
+            $modalCtrl.cancel = function () {
+                $uibModalInstance.dismiss();
+            }
         })
 
         .component('computersComponent', {

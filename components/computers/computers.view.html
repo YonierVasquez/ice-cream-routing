@@ -5,7 +5,7 @@
 
 <main ng-controller="computersController">
 
-    <button class="btn--primary" ng-click="open()">
+    <button class="btn--primary" ng-click="openModalCreateComputer()">
         <span class="material-symbols-outlined">add</span>
         Nuevo computador
     </button>
@@ -23,7 +23,7 @@
                     <button class="btn--option">
                         <span class="material-symbols-outlined">edit</span>
                     </button>
-                    <button class="btn--option">
+                    <button class="btn--option" ng-click="openModalDeleteComputer({{computer.id}})">
                         <span class="material-symbols-outlined">delete</span>
                     </button>
                 </div>
@@ -43,7 +43,7 @@
                 </div>
                 <div class="computer--property">
                     <span class="material-symbols-outlined">storage</span>
-                    {{computer.capacidadDisco}} {{computer.tipoDisco}}
+                    {{computer.capacidadDisco}}GB {{computer.tipoDisco}}
                 </div>
                 <div class="computer--property">
                     <span class="material-symbols-outlined">computer</span>
@@ -66,7 +66,7 @@
             <label for="modelo">Modelo</label><br>
             <input type="text" name="" id="modelo" class="form-control" ng-model="$modalCtrl.modelo"><br>
             <label for="year">Año lanzamiento</label><br>
-            <input type="number" name="" id="year" class="form-control" ng-model="$modalCtrl.year"><br>
+            <input type="number" name="" id="year" class="form-control" ng-model="$modalCtrl.yearLanzamiento"><br>
             <label for="color">Color</label><br>
             <input type="text" name="" id="color" class="form-control" ng-model="$modalCtrl.color"><br>
             <label for="capDefRam">Capacidad defecto RAM</label><br>
@@ -81,11 +81,11 @@
                 <option value="HDD">HDD</option>
             </select><br><br>
             <label for="capacidadDisco">Capacidad disco</label><br>
-            <input type="text" name="" id="capacidadDisco" class="form-control" ng-model="$modalCtrl.capacidadDisco"><br>
+            <input type="number" name="" id="capacidadDisco" class="form-control" ng-model="$modalCtrl.capacidadDisco"><br>
             <label for="tipoComputador">Tipo computador</label><br>
             <select class="form-select form-select-sm select--tipo" ng-model="$modalCtrl.tipoComputador">
-                <option selected value="portatil">Portatil</option>
-                <option value="escritorio">Escritorio</option>
+                <option selected value="Portatil">Portatil</option>
+                <option value="Escritorio">Escritorio</option>
             </select>
         </div>
 
@@ -94,5 +94,20 @@
             <button class="btn btn-warning" type="button" ng-click="$modalCtrl.cancel()">Cancel</button>
         </div>
     </script>
+
+    <!-- Modal para borrar un computador -->
+    <script type="text/ng-template" id="myModalDelete.html">
+        <div class="modal-header">
+            <h3 class="modal-title" id="modal-title">Borrar equipo</h3>
+        </div>
+
+        <div class="modal-body modal--body--delete" id="modal-body">
+            <p>¿Estás seguro de que quieres borrar este equipo?</p>
+        </div>
+
+        <div class="modal-footer">
+            <button class="btn btn-primary" type="button" ng-click="$modalCtrl.ok()">OK</button>
+            <button class="btn btn-warning" type="button" ng-click="$modalCtrl.cancel()">Cancel</button>
+        </div>
 
 </main>

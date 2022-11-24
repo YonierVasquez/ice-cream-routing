@@ -130,16 +130,20 @@
         }
     ]
 
-
-
-
-
     angular.module("computersService", [])
 
         .factory("computersService", function () {
             return {
                 getComputers: function () {
                     return Promise.resolve(computersList)
+                },
+                addComputer: function(computer) {
+                    console.log('new computer', computer)
+                    return Promise.resolve(true)
+                },
+                deleteComputer: function(computerId) {
+                    console.log('delete computer', computerId)
+                    return Promise.resolve(true)
                 }
             }
         })
