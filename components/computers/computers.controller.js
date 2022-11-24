@@ -3,7 +3,7 @@
     angular.module('computersModule', ['computersService', 'ui.bootstrap'])
 
         .controller('computersController', ['$scope', 'computersService', '$uibModal', function ($scope, computersService, $uibModal) {
-            $scope.computersList = []
+            $scope.computersList =[]
             computersService.getComputers().then(function (computers) {
                 $scope.computersList = computers
             })
@@ -22,13 +22,9 @@
 
                 modalInstance.result.then(
                     function (newComputer) {
-                        computersService.addComputer(newComputer).then(function (valido) {
-                            if (valido) {
-                                $scope.computersList.push(newComputer)
-                            }
-                        })
-                    },
-                    function () {}
+                        computersService.addComputer(newComputer)
+                        
+                    }
                 );
             }
 
