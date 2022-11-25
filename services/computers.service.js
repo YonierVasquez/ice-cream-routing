@@ -130,53 +130,56 @@
         }
     ]
 
-    angular.module("computersService", [])
+    angular.module("computersService", ['mappingService'])
 
-        .factory("computersService", ["$http", function ($http) {
+        .factory("computersService", ["$http", 'mappingService', function ($http, mappingService) {
             return {
-                getComputers: function () {
-                    return $http({
+                getComputers: function (callbackWhenComputersAreBrought) {
+                    $http({
                         method: 'GET',
                         url: 'https://localhost:44329/Computers',
                         headers: {
                             'Access-Control-Allow-Origin': '*',
                         }
-                    })
+                    }).then(callbackWhenComputersAreBrought(mappingService.mapComputer(computer))) // aplicar map para soportar compatibilidad por nombre de propiedades diferentes entre frontend y backend
                 },
-                addComputer: function (computer) {
-                    console.log('new computer', computer)
-                    return {
-                        getComputers: function () {
 
-                            return $http({
-                                method: 'POST',
-                                url: 'https://localhost:44329/Computers/create',
-                                headers: {
-                                    'Access-Control-Allow-Origin': '*',
-                                },
-                                date: {
-                                    computer: computer
-                                }
-                            }).then(function (valido) {
-                                if (valido) {
-                                    
-                                    $scope.computersList.push(newComputer)
-                                    console.log("Valida");
-                                    console.log(valido);
-                                    return valido;
-                                }
-                            }).then(function (valido){
-                                console.log("no Valida");
-                                console.log(valido)
-                                console.log()
-                            })
+                addComputer: function (computerToAdd, callbackWhenIsSavedInBackend) {
+                    $http({
+                        method: 'POST',
+                        url: 'https://localhost:44329/Computers/create',
+                        headers: {
+                            'Access-Control-Allow-Origin': '*',
+                            'Content-Type': 'application/json'
                         },
-
-                    }
+                        date: {
+                            computer: computerToAdd
+                        }
+                    }).then(callbackWhenIsSavedInBackend(response)) // ¿que retorna esta solicitud? (aplicar map si es necesario)
                 },
-                deleteComputer: function (computerId) {
-                    console.log('delete computer', computerId)
-                    return Promise.resolve(true)
+
+                updateComputer: function(computerUpdate, callbackWhenIsUpdateInBackend) {
+                    $http({
+                        method: 'PUT',
+                        url: 'https://localhost:44329/Computers/update',
+                        headers: {
+                            'Access-Control-Allow-Origin': '*',
+                            'Content-Type': 'application/json'
+                        },
+                        date: {
+                            computer: computerUpdate
+                        }
+                    }).then(callbackWhenIsUpdateInBackend(response)) // aplicar map
+                },
+
+                deleteComputer: function (computerId, callbackWhenIsDeletedInBackend) {
+                    $http({
+                        method: 'DELETE',
+                        url: `https://localhost:44329/Computers/delete?id=${computerId}`,
+                        headers: {
+                            'Access-Control-Allow-Origin': '*',
+                        },
+                    }).then(callbackWhenIsDeletedInBackend(response))
                 }
             }
         }])
