@@ -159,6 +159,7 @@
                                 }
                             }).then(function (valido) {
                                 if (valido) {
+                                    
                                     $scope.computersList.push(newComputer)
                                     console.log("Valida");
                                     console.log(valido);

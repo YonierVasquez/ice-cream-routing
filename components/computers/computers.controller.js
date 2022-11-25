@@ -4,8 +4,8 @@
 
         .controller('computersController', ['$scope', 'computersService', '$uibModal', function ($scope, computersService, $uibModal) {
             $scope.computersList =[]
-            computersService.getComputers().then(function (computers) {
-                $scope.computersList = computers
+            computersService.getComputers(function(computers){
+                $scope.computersList = computers;
             })
 
             $scope.openModalCreateComputer = function () {
