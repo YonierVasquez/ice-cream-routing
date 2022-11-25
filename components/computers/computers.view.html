@@ -21,10 +21,10 @@
                 </div>
                 <div>
                     <button class="btn--option">
-                        <span class="material-symbols-outlined">edit</span>
+                        <span class="material-symbols-outlined" ng-click="openModalEditComputer(computer)">edit</span>
                     </button>
-                    <button class="btn--option" >
-                        <span class="material-symbols-outlined">delete</span>
+                    <button class="btn--option">
+                        <span class="material-symbols-outlined" ng-click="openModalDeleteComputer(computer.id)">delete</span>
                     </button>
                 </div>
             </div>
@@ -57,7 +57,7 @@
     <!-- Modal para crear un computador -->
     <script type="text/ng-template" id="myModalContent.html">
         <div class="modal-header">
-            <h3 class="modal-title" id="modal-title">Crear un nuevo equipo</h3>
+            <h3 class="modal-title" id="modal-title">{{$modalCtrl.tituloModal}}</h3>
         </div>
 
         <div class="modal-body modal--body--create" id="modal-body">
@@ -84,7 +84,7 @@
             <input type="number" name="" id="capacidadDisco" class="form-control" ng-model="$modalCtrl.capacidadDisco"><br>
             <label for="tipoComputador">Tipo computador</label><br>
             <select class="form-select form-select-sm select--tipo" ng-model="$modalCtrl.tipoComputador">
-                <option selected value="Portatil">Portatil</option>
+                <option selected value="Portátil">Portátil</option>
                 <option value="Escritorio">Escritorio</option>
             </select>
         </div>
