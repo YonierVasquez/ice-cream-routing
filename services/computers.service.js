@@ -130,9 +130,9 @@
         }
     ]
 
-    angular.module("computersService", ['mappingService'])
+    angular.module("computersService", [])
 
-        .factory("computersService", ["$http", 'mappingService', function ($http, mappingService) {
+        .factory("computersService", ["$http", function ($http) {
             return {
                 getComputers: function (callbackWhenComputersAreBrought) {
                     $http({
@@ -141,45 +141,35 @@
                         headers: {
                             'Access-Control-Allow-Origin': '*',
                         }
-                    }).then(callbackWhenComputersAreBrought(mappingService.mapComputer(computer))) // aplicar map para soportar compatibilidad por nombre de propiedades diferentes entre frontend y backend
+                    }).then(function(response){
+                        callbackWhenComputersAreBrought(response.data)
+                    }) // aplicar map para soportar compatibilidad por nombre de propiedades diferentes entre frontend y backend
                 },
 
                 addComputer: function (computerToAdd, callbackWhenIsSavedInBackend) {
-                    $http({
-                        method: 'POST',
-                        url: 'https://localhost:44329/Computers/create',
-                        headers: {
-                            'Access-Control-Allow-Origin': '*',
-                            'Content-Type': 'application/json'
-                        },
-                        date: {
-                            computer: computerToAdd
-                        }
-                    }).then(callbackWhenIsSavedInBackend(response)) // ¿que retorna esta solicitud? (aplicar map si es necesario)
+                    console.log("Objeto a enviar ",computerToAdd)
+                    console.log("JSON",JSON.stringify(computerToAdd))
+                    $http.post('https://localhost:44329/Computers/create',JSON.stringify(computerToAdd)).then(function(respose){
+                        callbackWhenIsSavedInBackend(respose.data)
+                    }) // ¿que retorna esta solicitud? (aplicar map si es necesario)
                 },
 
                 updateComputer: function(computerUpdate, callbackWhenIsUpdateInBackend) {
-                    $http({
-                        method: 'PUT',
-                        url: 'https://localhost:44329/Computers/update',
-                        headers: {
-                            'Access-Control-Allow-Origin': '*',
-                            'Content-Type': 'application/json'
-                        },
-                        date: {
-                            computer: computerUpdate
-                        }
-                    }).then(callbackWhenIsUpdateInBackend(response)) // aplicar map
+                    console.log("ENVIADO A PUT ",computerUpdate)
+                    $http.put('https://localhost:44329/Computers/update',JSON.stringify(computerUpdate)).then(function(response){
+                        callbackWhenIsUpdateInBackend(response.data)
+                    })
                 },
 
                 deleteComputer: function (computerId, callbackWhenIsDeletedInBackend) {
-                    $http({
-                        method: 'DELETE',
-                        url: `https://localhost:44329/Computers/delete?id=${computerId}`,
-                        headers: {
+                    console.log("CARD ID ",computerId)
+                        $http.delete(`https://localhost:44329/Computers/delete?Id=${computerId}`,
+                        {
                             'Access-Control-Allow-Origin': '*',
-                        },
-                    }).then(callbackWhenIsDeletedInBackend(response))
+                        }
+                        ).then(function(response){
+                        callbackWhenIsDeletedInBackend(response.data)
+                    })
                 }
             }
         }])

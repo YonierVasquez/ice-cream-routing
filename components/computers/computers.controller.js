@@ -1,13 +1,15 @@
 (function (angular) {
 
-    angular.module('computersModule', ['computersService', 'ui.bootstrap'])
+    angular.module('computersModule', ['mappingService','computersService', 'ui.bootstrap'])
 
-        .controller('computersController', ['$scope', 'computersService', '$uibModal', function ($scope, computersService, $uibModal) {
+        .controller('computersController', ['$scope','mappingService','computersService','$uibModal', function ($scope,mappingService,computersService, $uibModal) {
             $scope.computersList =[]
-            computersService.getComputers(function(computers){
-                $scope.computersList = computers;
-            })
-
+            let getComputers = function(){
+                computersService.getComputers(function(computers){
+                    $scope.computersList = mappingService.mapComputer(computers);
+                })
+            }
+            getComputers()         
             $scope.openModalCreateComputer = function () {
                 let modalInstance = $uibModal.open({
                     animation: true,
@@ -22,9 +24,14 @@
 
                 modalInstance.result.then(
                     function (newComputer) {
+                        
                         computersService.addComputer(newComputer, function(computerSaved) {
-                            $scope.computersList.push(computerSaved)
+                            getComputers()
+                            console.log("Computador que llega ",computerSaved);
                         })
+                    },
+                    function(){
+
                     }
                 );
             }
@@ -46,10 +53,13 @@
                 });
 
                 modalInstance.result.then(
-                    function (computerUpdated) {
-                        computersService.updateComputer(computerUpdatedToSave, function(computerSavedInBackend) {
-                            let index = $scope.computersList.findIndex(c => c.id === computerUpdated.id)
-                                $scope.computersList[index] = computerUpdated
+                    function (computerUP) {
+                       
+                        computersService.updateComputer(computerUP, function(computerSavedInBackend) {
+                                if(computerSavedInBackend){ //VERIFICO QUE SE HAYA GUARDADO 
+                                    getComputers()
+                                }
+                                
                         })
                     },
                     function () { }
@@ -57,6 +67,7 @@
             }
 
             $scope.openModalDeleteComputer = function (computerId) {
+                console.log("ID que envia el cards ",computerId)
                 let modalInstance = $uibModal.open({
                     animation: true,
                     ariaLabelledBy: 'modal-title',
@@ -84,6 +95,8 @@
         .controller('ModalCreateComputerCtrl', function ($uibModalInstance) {
             var $modalCtrl = this;
             $modalCtrl.tituloModal = 'Crear Computador'
+            let TiposDisco = {"SSD":1,"HDD":2}
+            let TiposComputador = {"Portátil":1,"Escritorio":2}
 
             // Datos computador
             $modalCtrl.marca = ''
@@ -99,16 +112,16 @@
 
             $modalCtrl.ok = function () {
                 $uibModalInstance.close({
-                    marca: $modalCtrl.marca,
-                    modelo: $modalCtrl.modelo,
-                    yearLanzamiento: $modalCtrl.yearLanzamiento,
-                    color: $modalCtrl.color,
-                    capacidadDefectoRam: $modalCtrl.capacidadDefectoRam,
-                    capacidadMaximaRam: $modalCtrl.capacidadMaximaRam,
-                    procesador: $modalCtrl.procesador,
-                    tipoDisco: $modalCtrl.tipoDisco,
-                    capacidadDisco: $modalCtrl.capacidadDisco,
-                    tipoComputador: $modalCtrl.tipoComputador
+                    Brand: $modalCtrl.marca,
+                    Modelo: $modalCtrl.modelo,
+                    RealeseYear: $modalCtrl.yearLanzamiento,
+                    Color: $modalCtrl.color,
+                    DefaultCapacity: $modalCtrl.capacidadDefectoRam,
+                    MaxCapacity: $modalCtrl.capacidadMaximaRam,
+                    Processor: $modalCtrl.procesador,
+                    TypeDisc: TiposDisco[$modalCtrl.tipoDisco],
+                    DiscCapacity: $modalCtrl.capacidadDisco,
+                    TypeComputer: TiposComputador[$modalCtrl.tipoComputador]
                 });
             };
 
@@ -120,8 +133,10 @@
         .controller('ModalEditComputerCtrl', function ($uibModalInstance, computerToEdit) {
             var $modalCtrl = this;
             $modalCtrl.tituloModal = 'Editar Computador'
-
+            let TiposDisco = {"SSD":1,"HDD":2}
+            let TiposComputador = {"Portátil":1,"Escritorio":2}
             // Datos computador
+            $modalCtrl.id = computerToEdit.id
             $modalCtrl.marca = computerToEdit.marca
             $modalCtrl.modelo = computerToEdit.modelo
             $modalCtrl.yearLanzamiento = Number(computerToEdit.yearLanzamiento)
@@ -129,23 +144,24 @@
             $modalCtrl.capacidadDefectoRam = Number(computerToEdit.capacidadDefectoRam)
             $modalCtrl.capacidadMaximaRam = Number(computerToEdit.capacidadMaximaRam)
             $modalCtrl.procesador = computerToEdit.procesador
-            $modalCtrl.tipoDisco = computerToEdit.tipoDisco
+            $modalCtrl.tipoDisco =computerToEdit.tipoDisco
             $modalCtrl.capacidadDisco = Number(computerToEdit.capacidadDisco)
-            $modalCtrl.tipoComputador = computerToEdit.tipoComputador
+            $modalCtrl.tipoComputador =computerToEdit.tipoComputador
 
             $modalCtrl.ok = function () {
                 $uibModalInstance.close({
-                    id: computerToEdit.id,
-                    marca: $modalCtrl.marca,
-                    modelo: $modalCtrl.modelo,
-                    yearLanzamiento: $modalCtrl.yearLanzamiento,
-                    color: $modalCtrl.color,
-                    capacidadDefectoRam: $modalCtrl.capacidadDefectoRam,
-                    capacidadMaximaRam: $modalCtrl.capacidadMaximaRam,
-                    procesador: $modalCtrl.procesador,
-                    tipoDisco: $modalCtrl.tipoDisco,
-                    capacidadDisco: $modalCtrl.capacidadDisco,
-                    tipoComputador: $modalCtrl.tipoComputador
+                    //asignar las listas
+                    Id:$modalCtrl.id,
+                    Brand: $modalCtrl.marca,
+                    Modelo: $modalCtrl.modelo,
+                    RealeseYear: $modalCtrl.yearLanzamiento,
+                    Color: $modalCtrl.color,
+                    DefaultCapacity: $modalCtrl.capacidadDefectoRam,
+                    MaxCapacity: $modalCtrl.capacidadMaximaRam,
+                    Processor: $modalCtrl.procesador,
+                    TypeDisc: TiposDisco[$modalCtrl.tipoDisco],
+                    DiscCapacity: $modalCtrl.capacidadDisco,
+                    TypeComputer: TiposComputador[$modalCtrl.tipoComputador]
                 });
             };
 
